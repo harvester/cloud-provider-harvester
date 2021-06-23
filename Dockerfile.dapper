@@ -1,0 +1,21 @@
+FROM golang:1.16-alpine3.12
+
+ARG DAPPER_HOST_A.CRCH
+ENV ARCH $DAPPER_HOST_ARCH
+
+RUN apk -U add bash git gcc musl-dev docker vim less file curl wget ca-certificates
+RUN rm -rf /go/src /go/pkg
+RUN if [ "${ARCH}" == "amd64" ]; then \
+        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.41.1; \
+    fi
+
+ENV GO111MODULE off
+ENV DAPPER_ENV REPO TAG DRONE_TAG
+ENV DAPPER_SOURCE /go/src/github.com/harvester/harvester-cloud-provider/
+ENV DAPPER_OUTPUT ./bin ./dist
+ENV DAPPER_DOCKER_SOCKET true
+ENV HOME ${DAPPER_SOURCE}
+WORKDIR ${DAPPER_SOURCE}
+
+ENTRYPOINT ["./scripts/entry"]
+CMD ["ci"]
