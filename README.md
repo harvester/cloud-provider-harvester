@@ -1,5 +1,7 @@
 Harvester Cloud Provider
 ==========================
+[![Build Status](https://drone-publish.rancher.io/api/badges/harvester/cloud-provider-harvester/status.svg)](https://drone-publish.rancher.io/harvester/cloud-provider-harvester)
+
 Harvester Cloud Provider implements the Kubernetes Cloud Controller Manager and makes Harvester a Kubernetes cloud provider.
 
 ## Manifests and Deploying
