@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
       - args:
-        - --cloud-config=/etc/kubernetes/cloud-config/cloud-config.toml
+        - --cloud-config=/etc/kubernetes/cloud-config
         command:
         - harvester-cloud-provider
         image: rancher/harvester-cloud-provider:master-head
@@ -28,7 +28,7 @@ spec:
         name: harvester-cloud-provider
         resources: {}
         volumeMounts:
-        - mountPath: /etc/kubernetes/cloud-config
+        - mountPath: /etc/kubernetes
           name: cloud-config
       serviceAccountName: harvester-cloud-controller-manager
       tolerations:

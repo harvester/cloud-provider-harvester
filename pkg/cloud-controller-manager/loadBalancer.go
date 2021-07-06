@@ -25,11 +25,9 @@ const (
 type LoadBalancerManager struct {
 	lbClient    ctllbv1.LoadBalancerClient
 	namespace   string
-	clusterName string
 }
 
-func newLoadBalancerManager(cfg *rest.Config, namespace string, clusterName string) (cloudprovider.LoadBalancer, error) {
-
+func newLoadBalancerManager(cfg *rest.Config, namespace string) (cloudprovider.LoadBalancer, error) {
 	lbFactory, err := ctllb.NewFactoryFromConfig(cfg)
 	if err != nil {
 		return nil, err
@@ -38,7 +36,6 @@ func newLoadBalancerManager(cfg *rest.Config, namespace string, clusterName stri
 	return &LoadBalancerManager{
 		lbClient:    lbFactory.Loadbalancer().V1alpha1().LoadBalancer(),
 		namespace:   namespace,
-		clusterName: clusterName,
 	}, nil
 }
 
@@ -70,18 +67,8 @@ func (l *LoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName s
 }
 
 func (l *LoadBalancerManager) GetLoadBalancerName(ctx context.Context, clusterName string, service *v1.Service) string {
-	// If users don't specify cluster name by the command flag, we adopt the cluster name from the cloud config file
-	if clusterName == "" || clusterName == "kubernetes" {
-		clusterName = l.clusterName
-	}
-	name := clusterName + "-" + service.Namespace + "-" + service.Name
-	// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
-	// The name contains no more than 253 characters
-	if len(name) > 253 {
-		name = name[:253]
-	}
-
-	return name
+	// refer to https://kubernetes.io/docs/concepts/overview/working-with-objects/names
+	return "a" + string(service.UID) + "a"
 }
 
 // EnsureLoadBalancer is to create/update a Harvester load balancer for the service and return the loadBalancerStatus with an IP
