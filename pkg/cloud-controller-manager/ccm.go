@@ -3,8 +3,8 @@ package ccm
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 
-	"github.com/BurntSushi/toml"
 	"k8s.io/client-go/tools/clientcmd"
 	cloudprovider "k8s.io/cloud-provider"
 )
@@ -12,7 +12,6 @@ import (
 const ProviderName = "harvester"
 
 type CloudProvider struct {
-	config        *cloudConfig
 	loadBalancers cloudprovider.LoadBalancer
 	instances     cloudprovider.InstancesV2
 }
@@ -22,32 +21,36 @@ func init() {
 }
 
 func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
-	var config cloudConfig
-	if _, err := toml.DecodeReader(reader, &config); err != nil {
-		return nil, fmt.Errorf("decode toml file failed, error: %w", err)
-	}
-	if config.Harvester.Server == "" || config.Harvester.Token == "" || config.Harvester.Certificate == "" {
-		return nil, fmt.Errorf("server, token or certicate can not be empty")
-	}
-
-	cfg, err := clientcmd.BuildConfigFromFlags(config.Harvester.Server, "")
+	bytes, err := ioutil.ReadAll(reader)
 	if err != nil {
 		return nil, err
 	}
-	cfg.BearerToken = config.Harvester.Token
-	cfg.CAData = []byte(config.Harvester.Certificate)
 
-	loadBalancerManager, err := newLoadBalancerManager(cfg, config.Harvester.Namespace, config.Cluster.Name)
+	config, err := clientcmd.NewClientConfigFromBytes(bytes)
+	if err != nil {
+		return nil, err
+	}
+	clientConfig, err := config.ClientConfig()
+	if err != nil {
+		return nil, err
+	}
+	rawConfig, err := config.RawConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	ns := rawConfig.Contexts[rawConfig.CurrentContext].Namespace
+
+	loadBalancerManager, err := newLoadBalancerManager(clientConfig, ns)
 	if err != nil {
 		return nil, fmt.Errorf("create load balancer manager faield, err: %w", err)
 	}
 
-	instanceManager, err := newInstanceManager(cfg, config.Harvester.Namespace)
+	instanceManager, err := newInstanceManager(clientConfig, ns)
 	if err != nil {
 		return nil, fmt.Errorf("create instance manager failed, error: %w", err)
 	}
 	return &CloudProvider{
-		config:        &config,
 		loadBalancers: loadBalancerManager,
 		instances:     instanceManager,
 	}, nil

@@ -1,44 +1,25 @@
 Harvester Cloud Provider
 ==========================
+[![Build Status](https://drone-publish.rancher.io/api/badges/harvester/cloud-provider-harvester/status.svg)](https://drone-publish.rancher.io/harvester/cloud-provider-harvester)
+[![Go Report Card](https://goreportcard.com/badge/github.com/harvester/cloud-provider-harvester)](https://goreportcard.com/report/github.com/harvester/cloud-provider-harvester)
+[![Releases](https://img.shields.io/github/release/harvester/cloud-provider-harvester/all.svg)](https://github.com/harvester/cloud-provider-harvester/releases)
+
 Harvester Cloud Provider implements the Kubernetes Cloud Controller Manager and makes Harvester a Kubernetes cloud provider.
 
 ## Manifests and Deploying
 Before deploying the Harvester cloud provider, your Kubernetes should be configured to allow external cloud providers.<br>
 The ./manifests folder contains useful YAML manifests to use for deploying and developing the Harvester Cloud provider. The simply YAML creates a Deployment using the rancher/harvester-cloud-provider container.<br>
 It's recommended to deploy the Harvester cloud provider at the same time when spin up the Kubernetes cluster using the Harvester node driver.<br>
-You should be able to config it with the following steps:
+For RKE:
 - Select the external cloud provider option.
 
   ![](./doc/image/allow-cloud-provider.png)
 
-- Edit the RKE YAML to add custom plugins. 
+- Generate addon configuration and add it in the rke yaml.
   ```
-  rancher_kubernetes_engine_config:
-  ...
-    cloud_provider:
-      name: external
-    addons: |-
-      ---
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: cloud-config
-        namespace: kube-system
-      type: Opaque
-      stringData:
-        cloud-config.toml: |
-          [cluster]
-          name = <cluster name>
-          [harvester]
-          server = <Harvester cluster api-server url>
-          certificate-authority-data = <Harvester cluster CA from kubeconfig>
-          token = <Harvester service account token>
-          namespace = <Namespace in Harvester where to create resource>
-    addons_include:
-    - https://raw.githubusercontent.com/harvester/cloud-provider-harvester/master/manifests/rbac.yaml
-    - https://raw.githubusercontent.com/harvester/cloud-provider-harvester/master/manifests/deployment.yaml
+  # depend on kubectl to operate the Harvester
+  ./deploy/generate_kubeconfig.sh <serviceaccount name> <namespace>
   ```
-  The details about how to configure cloud-config refer to the [user guide](/doc/cloud-config-user-guide.md)
 
 ## License
 Copyright (c) 2021 Rancher Labs, Inc.
