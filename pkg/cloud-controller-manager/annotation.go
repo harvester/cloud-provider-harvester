@@ -2,14 +2,14 @@ package ccm
 
 const (
 	// Annotation key
-	prefix                      = "loadbalancer.harvesterhci.io/"
+	prefix                      = "cloudprovider.harvesterhci.io/"
 	loadBalancerDescription     = prefix + "description"
 	loadBalancerType            = prefix + "type"
-	healthCheckPort             = prefix + "healthCheckPort"
-	healthCheckSuccessThreshold = prefix + "healthCheckSuccessThreshold"
-	healthCheckFailureThreshold = prefix + "healthCheckFailureThreshold"
-	healthCheckPeriodSeconds    = prefix + "healthCheckPeriodSeconds"
-	healthCheckTimeoutSeconds   = prefix + "healthCheckTimeoutSeconds"
+	healthCheckPort             = prefix + "healthcheck-port"
+	healthCheckSuccessThreshold = prefix + "healthcheck-success-threshold"
+	healthCheckFailureThreshold = prefix + "healthcheck-failure-threshold"
+	healthCheckPeriodSeconds    = prefix + "healthcheck-periodseconds"
+	healthCheckTimeoutSeconds   = prefix + "healthcheck-timeoutseconds"
 
 	// Default value
 	defaultSuccessThreshold = 1

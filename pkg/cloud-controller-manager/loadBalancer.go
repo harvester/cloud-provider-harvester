@@ -3,6 +3,7 @@ package ccm
 import (
 	"context"
 	"fmt"
+	"hash/crc32"
 	"strconv"
 	"time"
 
@@ -20,11 +21,12 @@ import (
 
 const (
 	defaultWaitIPTimeout = time.Second * 5
+	uuidKey              = "cloudprovider.harvesterhci.io/service-uuid"
 )
 
 type LoadBalancerManager struct {
-	lbClient    ctllbv1.LoadBalancerClient
-	namespace   string
+	lbClient  ctllbv1.LoadBalancerClient
+	namespace string
 }
 
 func newLoadBalancerManager(cfg *rest.Config, namespace string) (cloudprovider.LoadBalancer, error) {
@@ -34,8 +36,8 @@ func newLoadBalancerManager(cfg *rest.Config, namespace string) (cloudprovider.L
 	}
 
 	return &LoadBalancerManager{
-		lbClient:    lbFactory.Loadbalancer().V1alpha1().LoadBalancer(),
-		namespace:   namespace,
+		lbClient:  lbFactory.Loadbalancer().V1alpha1().LoadBalancer(),
+		namespace: namespace,
 	}, nil
 }
 
@@ -67,8 +69,19 @@ func (l *LoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName s
 }
 
 func (l *LoadBalancerManager) GetLoadBalancerName(ctx context.Context, clusterName string, service *v1.Service) string {
-	// refer to https://kubernetes.io/docs/concepts/overview/working-with-objects/names
-	return "a" + string(service.UID) + "a"
+	name := clusterName + "-" + service.Namespace + "-" + service.Name
+
+	digest := crc32.ChecksumIEEE([]byte(name + string(service.UID)))
+	suffix := fmt.Sprintf("%8x", digest)
+	name += suffix
+
+	// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
+	// The name contains no more than 253 characters
+	if len(name) > 253 {
+		name = name[:253]
+	}
+
+	return name
 }
 
 // EnsureLoadBalancer is to create/update a Harvester load balancer for the service and return the loadBalancerStatus with an IP
@@ -106,6 +119,9 @@ func (l *LoadBalancerManager) EnsureLoadBalancer(ctx context.Context, clusterNam
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: l.namespace,
 				Name:      name,
+				Annotations: map[string]string{
+					uuidKey: string(service.UID),
+				},
 			},
 			Spec: *spec,
 		}); err != nil {
