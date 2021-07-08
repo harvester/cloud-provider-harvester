@@ -7,7 +7,7 @@ metadata:
   {{- include "harvester-cloud-provider.labels" . | nindent 4 }}
   name: {{ include "harvester-cloud-provider.name" . }}
 spec:
-  replicas: {{ .Values.replicaCount}}
+  replicas: {{ .Values.replicasCount}}
   selector:
     matchLabels:
   {{- include "harvester-cloud-provider.selectorLabels" . | nindent 6 }}
@@ -23,6 +23,9 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --cloud-config=/etc/kubernetes/cloud-config
+            {{- if ne .Values.clusterName "" }}
+            - --cluster-name={{ .Values.clusterName }}
+            {{- end }}
           command:
             - harvester-cloud-provider
           resources:
