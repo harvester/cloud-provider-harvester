@@ -21,7 +21,8 @@ import (
 
 const (
 	defaultWaitIPTimeout = time.Second * 5
-	uuidKey              = "cloudprovider.harvesterhci.io/service-uuid"
+	uuidKey              = prefix + "service-uuid"
+	clusterNameKey       = prefix + "cluster"
 )
 
 type LoadBalancerManager struct {
@@ -69,7 +70,7 @@ func (l *LoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName s
 }
 
 func (l *LoadBalancerManager) GetLoadBalancerName(ctx context.Context, clusterName string, service *v1.Service) string {
-	name := clusterName + "-" + service.Namespace + "-" + service.Name
+	name := clusterName + "-" + service.Namespace + "-" + service.Name + "-"
 
 	digest := crc32.ChecksumIEEE([]byte(name + string(service.UID)))
 	suffix := fmt.Sprintf("%8x", digest)
@@ -121,6 +122,9 @@ func (l *LoadBalancerManager) EnsureLoadBalancer(ctx context.Context, clusterNam
 				Name:      name,
 				Annotations: map[string]string{
 					uuidKey: string(service.UID),
+				},
+				Labels: map[string]string{
+					clusterNameKey: clusterName,
 				},
 			},
 			Spec: *spec,
