@@ -11,6 +11,7 @@ image:
   tag: master-head
 
 clusterName: ""
+cloudConfigPath: ""
 
 imagePullSecrets: []
 nameOverride: ""
@@ -52,6 +53,10 @@ resources: {}
 
 nodeSelector: {}
 
-tolerations: []
+tolerations:
+- effect: NoSchedule
+  key: node.cloudprovider.kubernetes.io/uninitialized
+  operator: Equal
+  value: "true"
 
 affinity: {}
