@@ -25,13 +25,13 @@ spec:
             - --cloud-config=/etc/kubernetes/cloud-config
             {{- if ne .Values.clusterName "" }}
             - --cluster-name={{ .Values.clusterName }}
-            {{- end }}
+          {{- end }}
           command:
             - harvester-cloud-provider
           resources:
           {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            - mountPath: /etc/kubernetes
+            - mountPath: /etc/kubernetes/cloud-config
               name: cloud-config
       {{- with .Values.nodeSelector }}
       nodeSelector:
@@ -47,5 +47,6 @@ spec:
       {{- end }}
       volumes:
         - name: cloud-config
-          secret:
-            secretName: cloud-config
+          hostPath:
+            path: {{ required "A valid cloudConfigPath required!" .Values.cloudConfigPath }}
+            type: File
