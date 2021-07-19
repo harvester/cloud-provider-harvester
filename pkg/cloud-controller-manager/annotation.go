@@ -4,7 +4,7 @@ const (
 	// Annotation key
 	prefix                      = "cloudprovider.harvesterhci.io/"
 	loadBalancerDescription     = prefix + "description"
-	loadBalancerType            = prefix + "type"
+	loadBalancerIPAM            = prefix + "ipam"
 	healthCheckPort             = prefix + "healthcheck-port"
 	healthCheckSuccessThreshold = prefix + "healthcheck-success-threshold"
 	healthCheckFailureThreshold = prefix + "healthcheck-failure-threshold"
