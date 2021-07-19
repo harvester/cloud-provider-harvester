@@ -1,12 +1,10 @@
 ## Load Balancer Request Parameters
 The Harvester cloud controller manager can configure the load balancer request parameters by the annotations of services.
 
-### Load Balancer Type
-The Harvester load balancer has two types.
-- Internal: The load balancer will get an IPv4 address that can only be accessed inside Harvester.
-- External: The load balancer will get an IPv4 address from the DHCP server. Whether the IPv4 address is in the LAN or WAN depends on the DHCP server configuration.
-
-We can configure the type by the annotation key `cloudprovider.harvesterhci.io/type`. Its value can be `internal` and `external`.
+### IPAM
+We can configure the IPAM mode by the annotation key `loadbalancer.harvesterhci.io/ipam`. Its value can be `pool` and `DHCP`. Defaults to `pool`.
+- pool: Users should configure an IP address pool in the Harvester. The Harvester LoadBalancer will allocate an address from the IP address poll for the load balancer.
+- DHCP: It requires a DHCP server. The Harvester LoadBalancer will request an address for the service from the DHCP server.
 
 ### Health Check
 Harvester cloud controller manager supports TCP health check. We explain the meaning of the related annotations below.<br>
