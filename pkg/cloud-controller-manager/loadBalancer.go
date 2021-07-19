@@ -53,17 +53,10 @@ func (l *LoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName s
 		}
 	}
 
-	var ip string
-	if lb.Spec.Type == lbv1.External {
-		ip = lb.Status.ExternalAddress
-	} else {
-		ip = lb.Status.InternalAddress
-	}
-
 	return &v1.LoadBalancerStatus{
 		Ingress: []v1.LoadBalancerIngress{
 			{
-				IP: ip,
+				IP: lb.Status.Address,
 			},
 		},
 	}, true, nil
@@ -104,7 +97,7 @@ func (l *LoadBalancerManager) EnsureLoadBalancer(ctx context.Context, clusterNam
 		return nil, fmt.Errorf("watch loadbalancer in namespace %s error, %w", l.namespace, err)
 	}
 	defer w.Stop()
-	go getIP(w, name, service, ipChan, lb)
+	go getIP(w, ipChan, lb)
 
 	// create or update lb
 	if getErr == nil {
@@ -187,19 +180,10 @@ func (l *LoadBalancerManager) EnsureLoadBalancerDeleted(ctx context.Context, clu
 }
 
 // getIP by watching the loadbalancers
-func getIP(w watch.Interface, lbName string, service *v1.Service, ipChan chan string, lbBeforeEnsure *lbv1.LoadBalancer) {
-	lbType := lbv1.External
-	if typeStr, ok := service.Annotations[loadBalancerType]; ok {
-		lbType = lbv1.LBType(typeStr)
-	}
-
+func getIP(w watch.Interface, ipChan chan string, lbBeforeEnsure *lbv1.LoadBalancer) {
 	// if the lb has a ip before ensuring, return it directly
-	if lbType == lbv1.External && lbBeforeEnsure.Status.ExternalAddress != "" {
-		ipChan <- lbBeforeEnsure.Status.ExternalAddress
-		return
-	}
-	if lbType == lbv1.Internal && lbBeforeEnsure.Status.InternalAddress != "" {
-		ipChan <- lbBeforeEnsure.Status.InternalAddress
+	if lbBeforeEnsure.Status.Address != "" {
+		ipChan <- lbBeforeEnsure.Status.Address
 		return
 	}
 
@@ -210,27 +194,21 @@ func getIP(w watch.Interface, lbName string, service *v1.Service, ipChan chan st
 		lb, ok := event.Object.(*lbv1.LoadBalancer)
 		if !ok {
 			klog.Errorf("type assert failed")
-			continue
+			return
 		}
-		if lb.Name != lbName {
-			continue
-		}
-		if lbType == lbv1.External && lb.Status.ExternalAddress != "" {
-			ipChan <- lb.Status.ExternalAddress
-			break
-		}
-		if lbType == lbv1.Internal && lb.Status.InternalAddress != "" {
-			ipChan <- lb.Status.InternalAddress
-			break
+
+		if lb.Status.Address != "" {
+			ipChan <- lb.Status.Address
+			return
 		}
 	}
 }
 
 func getLBSpec(service *v1.Service, nodes []*v1.Node) (*lbv1.LoadBalancerSpec, error) {
-	// type
-	lbType := lbv1.External
-	if typeStr, ok := service.Annotations[loadBalancerType]; ok {
-		lbType = lbv1.LBType(typeStr)
+	// ipam
+	ipam := lbv1.Pool
+	if ipamStr, ok := service.Annotations[loadBalancerIPAM]; ok {
+		ipam = lbv1.IPAM(ipamStr)
 	}
 
 	// listeners
@@ -262,7 +240,7 @@ func getLBSpec(service *v1.Service, nodes []*v1.Node) (*lbv1.LoadBalancerSpec, e
 
 	return &lbv1.LoadBalancerSpec{
 		Description:    service.Annotations[loadBalancerDescription],
-		Type:           lbType,
+		IPAM:           ipam,
 		Listeners:      listeners,
 		BackendServers: backendServers,
 		HeathCheck:     healthCheck,
