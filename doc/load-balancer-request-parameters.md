@@ -2,9 +2,9 @@
 The Harvester cloud controller manager can configure the load balancer request parameters by the annotations of services.
 
 ### IPAM
-We can configure the IPAM mode by the annotation key `loadbalancer.harvesterhci.io/ipam`. Its value can be `pool` and `DHCP`. Defaults to `pool`.
+We can configure the IPAM mode by the annotation key `cloudprovider.harvesterhci.io/ipam`. Its value can be `pool` and `dhcp`. Defaults to `pool`.
 - pool: Users should configure an IP address pool in the Harvester. The Harvester LoadBalancer will allocate an address from the IP address poll for the load balancer.
-- DHCP: It requires a DHCP server. The Harvester LoadBalancer will request an address for the service from the DHCP server.
+- dhcp: It requires a DHCP server. The Harvester LoadBalancer will request an address for the service from the DHCP server.
 
 ### Health Check
 Harvester cloud controller manager supports TCP health check. We explain the meaning of the related annotations below.<br>
