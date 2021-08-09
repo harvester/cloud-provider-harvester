@@ -10,7 +10,8 @@ Harvester Cloud Provider implements the Kubernetes Cloud Controller Manager and 
 Before deploying the Harvester cloud provider, your Kubernetes should be configured to allow external cloud providers.<br>
 The ./manifests folder contains useful YAML manifests to use for deploying and developing the Harvester Cloud provider. The simply YAML creates a Deployment using the rancher/harvester-cloud-provider container.<br>
 It's recommended to deploy the Harvester cloud provider at the same time when spin up the Kubernetes cluster using the Harvester node driver.<br>
-For RKE:
+
+### For RKE:
 - Select the external cloud provider option.
 
   ![](./doc/image/allow-cloud-provider.png)
@@ -20,6 +21,9 @@ For RKE:
   # depend on kubectl to operate the Harvester
   ./deploy/generate_kubeconfig.sh <serviceaccount name> <namespace>
   ```
+
+### Helm chart
+To find the helm chart in the [harvester helm chart repo](https://charts.harvesterhci.io).
 
 ## License
 Copyright (c) 2021 Rancher Labs, Inc.
