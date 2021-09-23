@@ -3,7 +3,10 @@ The Harvester cloud controller manager can configure the load balancer request p
 
 ### IPAM
 We can configure the IPAM mode by the annotation key `cloudprovider.harvesterhci.io/ipam`. Its value can be `pool` and `dhcp`. Defaults to `pool`.
-- pool: Users should configure an IP address pool in the Harvester. The Harvester LoadBalancer will allocate an address from the IP address poll for the load balancer.
+- pool: Users should configure an IP address pool in the Harvester in advance. The Harvester LoadBalancer will allocate an address from the IP address poll for the load balancer.
+
+   > Refer to the [guideline](https://github.com/kube-vip/kube-vip-cloud-provider#global-and-namespace-pools) about how to configure an IP address pool.
+                                                                                                                                                                           
 - dhcp: It requires a DHCP server. The Harvester LoadBalancer will request an address for the service from the DHCP server.
 
 ### Health Check

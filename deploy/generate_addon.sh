@@ -126,6 +126,7 @@ $kubeconfig
   addons_include:
   - https://raw.githubusercontent.com/harvester/cloud-provider-harvester/master/deploy/manifests/rbac.yaml
   - https://raw.githubusercontent.com/harvester/cloud-provider-harvester/master/deploy/manifests/deployment.yaml
+  - https://raw.githubusercontent.com/harvester/harvester-csi-driver/master/deploy/manifests/deployment.yaml
   "
   rm -rf ${TARGET_FOLDER}
 }
@@ -138,4 +139,5 @@ get_secret_name_from_service_account
 extract_ca_crt_from_secret
 get_user_token_from_secret
 set_kube_config_values
+echo ${KUBECFG_FILE_NAME}
 assemble_addon_config
