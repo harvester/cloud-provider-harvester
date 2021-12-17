@@ -235,7 +235,7 @@ func getLBSpec(service *v1.Service, nodes []*v1.Node) (*lbv1.LoadBalancerSpec, e
 	}
 
 	// healthCheck
-	healthCheck, err := extractHealthCheck(service.Annotations)
+	healthCheck, err := extractHealthCheck(service)
 	if err != nil {
 		return nil, fmt.Errorf("extract health check failed, error: %w", err)
 	}
@@ -249,41 +249,64 @@ func getLBSpec(service *v1.Service, nodes []*v1.Node) (*lbv1.LoadBalancerSpec, e
 	}, nil
 }
 
-func extractHealthCheck(annotations map[string]string) (*lbv1.HeathCheck, error) {
+func extractHealthCheck(svc *v1.Service) (*lbv1.HeathCheck, error) {
 	healthCheck := &lbv1.HeathCheck{}
 	var err error
 
 	// port
-	portStr, ok := annotations[healthCheckPort]
-	if !ok {
-		return nil, nil
-	} else {
-		if healthCheck.Port, err = strconv.Atoi(portStr); err != nil {
-			return nil, fmt.Errorf("atoi error, port: %s, error: %w", portStr, err)
-		}
+	port, err := getNodePort(svc)
+	if err != nil {
+		return nil, fmt.Errorf("get healthy check port failed, error: %w", err)
+	}
+	if port != nil {
+		healthCheck.Port = *port
 	}
 
 	// successThreshold
-	if healthCheck.SuccessThreshold, err = getAnnotationValue(annotations, healthCheckSuccessThreshold); err != nil {
+	if healthCheck.SuccessThreshold, err = getAnnotationValue(svc.Annotations, healthCheckSuccessThreshold); err != nil {
 		return nil, fmt.Errorf("get annotationsValue failed, key: %s, err: %w", healthCheckSuccessThreshold, err)
 	}
 
 	// failThreshold
-	if healthCheck.FailureThreshold, err = getAnnotationValue(annotations, healthCheckFailureThreshold); err != nil {
+	if healthCheck.FailureThreshold, err = getAnnotationValue(svc.Annotations, healthCheckFailureThreshold); err != nil {
 		return nil, fmt.Errorf("get annotationsValue failed, key: %s, err: %w", healthCheckFailureThreshold, err)
 	}
 
 	// periodSeconds
-	if healthCheck.PeriodSeconds, err = getAnnotationValue(annotations, healthCheckPeriodSeconds); err != nil {
+	if healthCheck.PeriodSeconds, err = getAnnotationValue(svc.Annotations, healthCheckPeriodSeconds); err != nil {
 		return nil, fmt.Errorf("get annotationsValue failed, key: %s, err: %w", healthCheckPeriodSeconds, err)
 	}
 
 	// timeout
-	if healthCheck.TimeoutSeconds, err = getAnnotationValue(annotations, healthCheckTimeoutSeconds); err != nil {
+	if healthCheck.TimeoutSeconds, err = getAnnotationValue(svc.Annotations, healthCheckTimeoutSeconds); err != nil {
 		return nil, fmt.Errorf("get annotationsValue failed, key: %s, err: %w", healthCheckTimeoutSeconds, err)
 	}
 
 	return healthCheck, nil
+}
+
+func getNodePort(svc *v1.Service) (*int, error) {
+	portStr, ok := svc.Annotations[healthCheckPort]
+	if !ok {
+		return nil, nil
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, fmt.Errorf("atoi error, port: %s, error: %w", portStr, err)
+	}
+
+	var nodePort int
+	for _, p := range svc.Spec.Ports {
+		if p.Port == int32(port) {
+			nodePort = int(p.NodePort)
+		}
+	}
+	if nodePort == 0 {
+		return nil, fmt.Errorf("nodeport not found, service port: %d", port)
+	}
+
+	return &nodePort, nil
 }
 
 func getAnnotationValue(annotations map[string]string, key string) (int, error) {
