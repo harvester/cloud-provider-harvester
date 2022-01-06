@@ -23,6 +23,8 @@ const (
 	defaultWaitIPTimeout = time.Second * 5
 	uuidKey              = prefix + "service-uuid"
 	clusterNameKey       = prefix + "cluster"
+
+	maxNameLength = 63
 )
 
 type LoadBalancerManager struct {
@@ -69,10 +71,10 @@ func (l *LoadBalancerManager) GetLoadBalancerName(ctx context.Context, clusterNa
 	suffix := fmt.Sprintf("%8x", digest)
 	name += suffix
 
-	// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
-	// The name contains no more than 253 characters
-	if len(name) > 253 {
-		name = name[:253]
+	// The name of a Service object must be a valid [RFC 1035 label name](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names)
+	// The name contains no more than 63 characters
+	if len(name) > maxNameLength {
+		name = name[:maxNameLength]
 	}
 
 	return name
