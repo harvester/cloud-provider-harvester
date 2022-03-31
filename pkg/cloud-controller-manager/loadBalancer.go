@@ -260,6 +260,8 @@ func extractHealthCheck(svc *v1.Service) (*lbv1.HeathCheck, error) {
 	}
 	if port != nil {
 		healthCheck.Port = *port
+	} else {
+		return nil, nil
 	}
 
 	// successThreshold
