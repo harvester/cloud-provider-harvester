@@ -68,7 +68,7 @@ func (l *LoadBalancerManager) GetLoadBalancerName(ctx context.Context, clusterNa
 	name := clusterName + "-" + service.Namespace + "-" + service.Name + "-"
 
 	digest := crc32.ChecksumIEEE([]byte(name + string(service.UID)))
-	suffix := fmt.Sprintf("%8x", digest)
+	suffix := fmt.Sprintf("%08x", digest) // print in 8 width and pad with 0's
 	name += suffix
 
 	// The name of a Service object must be a valid [RFC 1035 label name](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names)
