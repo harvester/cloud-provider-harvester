@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 
+	"github.com/rancher/wrangler/pkg/kubeconfig"
 	"k8s.io/client-go/tools/clientcmd"
+
 	cloudprovider "k8s.io/cloud-provider"
 )
 
@@ -39,9 +42,14 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 		return nil, err
 	}
 
+	localCfg, err := kubeconfig.GetNonInteractiveClientConfig(os.Getenv("KUBECONFIG")).ClientConfig()
+	if err != nil {
+		return nil, err
+	}
+
 	ns := rawConfig.Contexts[rawConfig.CurrentContext].Namespace
 
-	loadBalancerManager, err := newLoadBalancerManager(clientConfig, ns)
+	loadBalancerManager, err := newLoadBalancerManager(clientConfig, localCfg, ns)
 	if err != nil {
 		return nil, fmt.Errorf("create load balancer manager faield, err: %w", err)
 	}
@@ -50,6 +58,7 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create instance manager failed, error: %w", err)
 	}
+
 	return &CloudProvider{
 		loadBalancers: loadBalancerManager,
 		instances:     instanceManager,

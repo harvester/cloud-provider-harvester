@@ -17,6 +17,8 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
+const maxTimeout2min = 2 * time.Minute
+
 type Handler interface {
 	OnChange(key string, obj runtime.Object) error
 }
@@ -86,7 +88,10 @@ func applyDefaultOptions(opts *Options) *Options {
 		newOpts = *opts
 	}
 	if newOpts.RateLimiter == nil {
-		newOpts.RateLimiter = workqueue.DefaultControllerRateLimiter()
+		newOpts.RateLimiter = workqueue.NewMaxOfRateLimiter(
+			workqueue.NewItemFastSlowRateLimiter(time.Millisecond, maxTimeout2min, 30),
+			workqueue.NewItemExponentialFailureRateLimiter(5*time.Millisecond, 30*time.Second),
+		)
 	}
 	return &newOpts
 }

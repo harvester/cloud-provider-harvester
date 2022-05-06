@@ -27,7 +27,7 @@ type SharedHandler struct {
 	// keep first because arm32 needs atomic.AddInt64 target to be mem aligned
 	idCounter int64
 
-	lock     sync.Mutex
+	lock     sync.RWMutex
 	handlers []handlerEntry
 }
 
@@ -61,8 +61,11 @@ func (h *SharedHandler) OnChange(key string, obj runtime.Object) error {
 	var (
 		errs errorList
 	)
+	h.lock.RLock()
+	handlers := h.handlers
+	h.lock.RUnlock()
 
-	for _, handler := range h.handlers {
+	for _, handler := range handlers {
 		newObj, err := handler.handler.OnChange(key, obj)
 		if err != nil && !errors.Is(err, ErrIgnore) {
 			errs = append(errs, &handlerError{

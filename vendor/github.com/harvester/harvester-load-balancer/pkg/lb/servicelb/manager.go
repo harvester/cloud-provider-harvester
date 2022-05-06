@@ -1,0 +1,300 @@
+package servicelb
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	ctlCorev1 "github.com/rancher/wrangler/pkg/generated/controllers/core/v1"
+	"github.com/sirupsen/logrus"
+	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+
+	lbv1 "github.com/harvester/harvester-load-balancer/pkg/apis/loadbalancer.harvesterhci.io/v1alpha1"
+	ctldiscoveryv1 "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/discovery.k8s.io/v1"
+	"github.com/harvester/harvester-load-balancer/pkg/prober"
+)
+
+const (
+	KeyLabel        = "loadbalancer.harvesterhci.io/servicelb"
+	KeyServiceName  = "kubernetes.io/service-name"
+	Address4AskDHCP = "0.0.0.0"
+)
+
+type Manager struct {
+	serviceClient       ctlCorev1.ServiceClient
+	serviceCache        ctlCorev1.ServiceCache
+	endpointSliceClient ctldiscoveryv1.EndpointSliceClient
+	endpointSliceCache  ctldiscoveryv1.EndpointSliceCache
+	*prober.Manager
+}
+
+func NewManager(ctx context.Context, serviceClient ctlCorev1.ServiceClient, serviceCache ctlCorev1.ServiceCache,
+	endpointSliceClient ctldiscoveryv1.EndpointSliceClient, endpointSliceCache ctldiscoveryv1.EndpointSliceCache) *Manager {
+	m := &Manager{
+		serviceClient:       serviceClient,
+		serviceCache:        serviceCache,
+		endpointSliceClient: endpointSliceClient,
+		endpointSliceCache:  endpointSliceCache,
+	}
+	m.Manager = prober.NewManager(ctx, m.updateHealthCondition)
+
+	return m
+}
+
+func (m *Manager) updateHealthCondition(uid string, isHealthy bool) error {
+	logrus.Infof("uid: %s, isHealthy: %t", uid, isHealthy)
+	ns, name, server, err := unMarshalUID(uid)
+	if err != nil {
+		return err
+	}
+
+	eps, err := m.endpointSliceCache.Get(ns, name)
+	if err != nil {
+		return fmt.Errorf("get cache of endpointslice %s/%s failed, error: %w", ns, name, err)
+	}
+
+	for i, ep := range eps.Endpoints {
+		if len(ep.Addresses) != 1 {
+			return fmt.Errorf("the length of addresses is not 1, endpoint: %+v", ep)
+		}
+		if ep.Addresses[0] == server {
+			epsCopy := eps.DeepCopy()
+			epsCopy.Endpoints[i].Conditions = discoveryv1.EndpointConditions{Ready: &isHealthy}
+			_, err := m.endpointSliceClient.Update(epsCopy)
+			return fmt.Errorf("update status of endpointslice %s/%s failed, error: %w", ns, name, err)
+		}
+	}
+
+	return nil
+}
+
+func (m *Manager) EnsureLoadBalancer(lb *lbv1.LoadBalancer) error {
+	if err := m.ensureService(lb); err != nil {
+		return fmt.Errorf("ensure service failed, error: %w", err)
+	}
+	if err := m.ensureEndpointSlice(lb); err != nil {
+		return fmt.Errorf("ensure endpointslice failed, error: %w", err)
+	}
+
+	if err := m.ensureProber(lb); err != nil {
+		return fmt.Errorf("ensure prober failed, error: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) DeleteLoadBalancer(lb *lbv1.LoadBalancer) {
+	m.removeProber(lb)
+}
+
+func (m *Manager) ensureProber(lb *lbv1.LoadBalancer) error {
+	if lb.Spec.HeathCheck == nil || lb.Spec.HeathCheck.Port == 0 {
+		m.removeProber(lb)
+		return nil
+	}
+
+	option := prober.HealthOption{
+		SuccessThreshold: lb.Spec.HeathCheck.SuccessThreshold,
+		FailureThreshold: lb.Spec.HeathCheck.FailureThreshold,
+		Timeout:          time.Duration(lb.Spec.HeathCheck.TimeoutSeconds) * time.Second,
+		Period:           time.Duration(lb.Spec.HeathCheck.PeriodSeconds) * time.Second,
+		InitialCondition: true,
+	}
+
+	eps, err := m.endpointSliceCache.Get(lb.Namespace, lb.Name)
+	if err != nil {
+		return fmt.Errorf("get cache of endpointslice %s/%s failed, error: %w", lb.Namespace, lb.Name, err)
+	}
+
+	for _, ep := range eps.Endpoints {
+		if len(ep.Addresses) != 1 {
+			return fmt.Errorf("the length of addresses is not 1, endpoint: %+v", ep)
+		}
+		option.Address = ep.Addresses[0] + ":" + strconv.Itoa(lb.Spec.HeathCheck.Port)
+		uid := marshalUID(lb.Namespace, lb.Name, ep.Addresses[0])
+		if ep.Conditions.Ready != nil {
+			option.InitialCondition = *ep.Conditions.Ready
+		}
+		m.AddWorker(uid, option)
+	}
+
+	return nil
+}
+
+func (m *Manager) removeProber(lb *lbv1.LoadBalancer) {
+	for _, server := range lb.Spec.BackendServers {
+		uid := marshalUID(lb.Namespace, lb.Name, server)
+		m.RemoveWorker(uid)
+	}
+}
+
+func unMarshalUID(uid string) (namespace, name, server string, err error) {
+	fields := strings.Split(uid, "/")
+	if len(fields) != 3 {
+		err = fmt.Errorf("invalid uid %s", uid)
+		return
+	}
+	namespace, name, server = fields[0], fields[1], fields[2]
+	return
+}
+
+func marshalUID(ns, name, server string) (uid string) {
+	uid = ns + "/" + name + "/" + server
+	return
+}
+
+func (m *Manager) ensureService(lb *lbv1.LoadBalancer) error {
+	svc, err := m.serviceCache.Get(lb.Namespace, lb.Name)
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("get cache of service %s/%s failed, error: %w", lb.Namespace, lb.Name, err)
+	} else if err == nil {
+		svc = constructService(svc, lb)
+		if _, err := m.serviceClient.Update(svc.DeepCopy()); err != nil {
+			return fmt.Errorf("update service %s/%s failed, error: %w", lb.Namespace, lb.Name, err)
+		}
+	} else {
+		svc = constructService(nil, lb)
+		if _, err := m.serviceClient.Create(svc); err != nil {
+			return fmt.Errorf("create service %s/%s failed, error: %w", lb.Namespace, lb.Name, err)
+		}
+	}
+
+	return nil
+}
+
+func constructService(cur *corev1.Service, lb *lbv1.LoadBalancer) *corev1.Service {
+	svc := &corev1.Service{}
+	if cur != nil {
+		svc = cur
+	} else {
+		svc.Name = lb.Name
+		svc.Namespace = lb.Namespace
+		svc.OwnerReferences = []metav1.OwnerReference{{
+			APIVersion: lb.APIVersion,
+			Kind:       lb.Kind,
+			Name:       lb.Name,
+			UID:        lb.UID,
+		}}
+		svc.Labels = map[string]string{
+			KeyLabel: "true",
+		}
+		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	}
+
+	if lb.Spec.IPAM == lbv1.DHCP {
+		// Kube-vip gets external IP for service of type LoadBalancer by DHCP if LoadBalancerIP is set as "0.0.0.0"
+		svc.Spec.LoadBalancerIP = Address4AskDHCP
+	} else {
+		svc.Spec.LoadBalancerIP = lb.Status.AllocatedAddress.IP
+	}
+
+	ports := []corev1.ServicePort{}
+	for _, listener := range lb.Spec.Listeners {
+		port := corev1.ServicePort{
+			Name:       listener.Name,
+			Protocol:   listener.Protocol,
+			Port:       listener.Port,
+			TargetPort: intstr.IntOrString{IntVal: listener.BackendPort},
+		}
+		ports = append(ports, port)
+	}
+	svc.Spec.Ports = ports
+
+	return svc
+}
+
+func (m *Manager) ensureEndpointSlice(lb *lbv1.LoadBalancer) error {
+	eps, err := m.endpointSliceCache.Get(lb.Namespace, lb.Name)
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("get cache of endpointslice %s/%s failed, error: %w", lb.Namespace, lb.Name, err)
+	} else if err == nil {
+		eps, err = constructEndpointSlice(eps, lb)
+		if err != nil {
+			return err
+		}
+		if _, err = m.endpointSliceClient.Update(eps); err != nil {
+			return fmt.Errorf("update endpointslice %s/%s failed, error: %w", lb.Namespace, lb.Name, err)
+		}
+	} else {
+		eps, err = constructEndpointSlice(nil, lb)
+		if err != nil {
+			return err
+		}
+		if _, err := m.endpointSliceClient.Create(eps); err != nil {
+			return fmt.Errorf("create endpointslice %s/%s failed, error: %w", lb.Namespace, lb.Name, err)
+		}
+	}
+
+	return nil
+}
+
+func constructEndpointSlice(cur *discoveryv1.EndpointSlice, lb *lbv1.LoadBalancer) (*discoveryv1.EndpointSlice, error) {
+	eps := &discoveryv1.EndpointSlice{}
+	if cur != nil {
+		eps = cur.DeepCopy()
+	} else {
+		eps.Namespace = lb.Namespace
+		eps.Name = lb.Name
+		eps.OwnerReferences = []metav1.OwnerReference{
+			{
+				APIVersion: lb.APIVersion,
+				Kind:       lb.Kind,
+				Name:       lb.Name,
+				UID:        lb.UID,
+			}}
+		eps.Labels = map[string]string{
+			KeyLabel:       "true",
+			KeyServiceName: lb.Name,
+		}
+		eps.AddressType = discoveryv1.AddressTypeIPv4
+	}
+
+	ports := []discoveryv1.EndpointPort{}
+	for _, listener := range lb.Spec.Listeners {
+		port := discoveryv1.EndpointPort{
+			Name:     &listener.Name,
+			Protocol: &listener.Protocol,
+			Port:     &listener.BackendPort,
+		}
+		ports = append(ports, port)
+	}
+	eps.Ports = ports
+
+	//it's necessary to reserve the condition of old endpoints.
+	var endpoints []discoveryv1.Endpoint
+	var flag bool
+	for _, server := range lb.Spec.BackendServers {
+		flag = false
+		for _, ep := range eps.Endpoints {
+			if len(ep.Addresses) != 1 {
+				return nil, fmt.Errorf("the length of addresses is not 1, endpoint: %+v", ep)
+			}
+			if server == ep.Addresses[0] {
+				flag = true
+				//add the existing endpoint
+				endpoints = append(endpoints, ep)
+				break
+			}
+		}
+		// add the non-existing endpoint
+		if !flag {
+			ready := true
+			endpoint := discoveryv1.Endpoint{
+				Addresses: []string{server},
+				Conditions: discoveryv1.EndpointConditions{
+					Ready: &ready,
+				},
+			}
+			endpoints = append(endpoints, endpoint)
+		}
+	}
+	eps.Endpoints = endpoints
+
+	return eps, nil
+}
