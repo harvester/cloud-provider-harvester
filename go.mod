@@ -7,7 +7,6 @@ replace (
 	github.com/docker/distribution => github.com/docker/distribution v0.0.0-20191216044856-a8371794149d
 	github.com/docker/docker => github.com/docker/docker v1.4.2-0.20200203170920-46ec8731fbce
 	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
-	github.com/harvester/harvester-load-balancer => github.com/yaocw2020/harvester-load-balancer v0.0.0-20210719071752-e6af90508d8e
 	github.com/knative/pkg => github.com/rancher/pkg v0.0.0-20190514055449-b30ab9de040e
 	github.com/openshift/api => github.com/openshift/api v0.0.0-20191219222812-2987a591a72c
 	github.com/openshift/client-go => github.com/openshift/client-go v0.0.0-20191125132246-f6563a70e19a
@@ -49,7 +48,8 @@ replace (
 
 require (
 	github.com/harvester/harvester v0.2.0
-	github.com/harvester/harvester-load-balancer v0.0.0-00010101000000-000000000000
+	github.com/harvester/harvester-load-balancer v0.1.2
+	github.com/rancher/wrangler v0.8.0
 	github.com/spf13/pflag v1.0.5
 	k8s.io/api v0.21.0
 	k8s.io/apimachinery v0.21.0
