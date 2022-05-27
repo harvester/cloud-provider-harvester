@@ -13,6 +13,7 @@ SERVICE_ACCOUNT_NAME=$1
 ROLE_BINDING_NAME=$1
 NAMESPACE="$2"
 ROLE_NAME="harvester-cloud-provider"
+CLUSTERROLE_NAME="harvester-cloud-provider-view-nodes"
 KUBECFG_FILE_NAME="./tmp/kube/k8s-${SERVICE_ACCOUNT_NAME}-${NAMESPACE}-conf"
 TARGET_FOLDER="./tmp/kube"
 
@@ -34,17 +35,14 @@ create_role() {
   apiVersion: rbac.authorization.k8s.io/v1
   kind: Role
   metadata:
-    name: harvester-cloud-provider
+    name: ${ROLE_NAME}
     namespace: ${NAMESPACE}
   rules:
     - apiGroups: [ 'loadbalancer.harvesterhci.io' ]
       resources: [ 'loadbalancers' ]
       verbs: [ 'get', 'watch', 'list', 'update', 'create', 'delete' ]
     - apiGroups: [ 'kubevirt.io' ]
-      resources: [ 'virtualmachineinstances' ]
-      verbs: [ 'get', 'watch', 'list' ]
-    - apiGroups: [ '' ]
-      resources: [ 'nodes' ]
+      resources: [ 'virtualmachines', 'virtualmachineinstances' ]
       verbs: [ 'get', 'watch', 'list' ]
   " | kubectl apply -f -
 }
@@ -52,6 +50,25 @@ create_role() {
 create_rolebinding() {
   echo -e "\\nCreating a rolebinding in ${NAMESPACE} namespace: ${ROLE_BINDING_NAME}"
   kubectl create rolebinding ${ROLE_BINDING_NAME} --serviceaccount=${NAMESPACE}:${SERVICE_ACCOUNT_NAME} --role=${ROLE_NAME} --dry-run -o yaml | kubectl apply -f -
+}
+
+create_clusterrole() {
+  echo -e "\\nCreating a clusterrole: ${CLUSTERROLE_NAME}"
+  echo "
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    name: ${CLUSTERROLE_NAME}
+  rules:
+    - apiGroups: [ '' ]
+      resources: [ 'nodes' ]
+      verbs: [ 'get', 'watch', 'list' ]
+  " | kubectl apply -f -
+}
+
+create_clusterrolebinding() {
+  echo -e "\\nCreating a clusterrolebinding: hcp-${ROLE_BINDING_NAME}"
+  kubectl create clusterrolebinding hcp-${ROLE_BINDING_NAME} --serviceaccount=${NAMESPACE}:${SERVICE_ACCOUNT_NAME} --clusterrole=${CLUSTERROLE_NAME} --dry-run -o yaml | kubectl apply -f -
 }
 
 get_secret_name_from_service_account() {
@@ -115,6 +132,8 @@ create_target_folder
 create_service_account
 create_role
 create_rolebinding
+create_clusterrole
+create_clusterrolebinding
 get_secret_name_from_service_account
 extract_ca_crt_from_secret
 get_user_token_from_secret
