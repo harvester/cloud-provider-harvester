@@ -171,6 +171,7 @@ github.com/bugsnag/osext v0.0.0-20130617224835-0dd3f918b21b/go.mod h1:obH5gd0Bsq
 github.com/bugsnag/panicwrap v0.0.0-20151223152923-e2c28503fcd0/go.mod h1:D/8v3kj0zr8ZAKg1AQ6crr+5VwKN5eIywRkfhyM/+dE=
 github.com/bugsnag/panicwrap v0.0.0-20160118154447-aceac81c6e2f/go.mod h1:D/8v3kj0zr8ZAKg1AQ6crr+5VwKN5eIywRkfhyM/+dE=
 github.com/c9s/goprocinfo v0.0.0-20170724085704-0010a05ce49f/go.mod h1:uEyr4WpAH4hio6LFriaPkL938XnrvLpNPmQHBdrmbIE=
+github.com/c9s/goprocinfo v0.0.0-20190309065803-0b2ad9ac246b h1:4yfM1Zm+7U+m0inJ0g6JvdqGePXD8eG4nXUTbcLT6gk=
 github.com/c9s/goprocinfo v0.0.0-20190309065803-0b2ad9ac246b/go.mod h1:uEyr4WpAH4hio6LFriaPkL938XnrvLpNPmQHBdrmbIE=
 github.com/caddyserver/caddy v1.0.3/go.mod h1:G+ouvOY32gENkJC+jhgl62TyhvqEsFaDiZ4uw0RzP1E=
 github.com/campoy/embedmd v1.0.0/go.mod h1:oxyr9RCiSXg0M3VJ3ks0UGfp98BpSSGr0kpiX3MzVl8=
@@ -356,6 +357,7 @@ github.com/fvbommel/sortorder v1.0.1/go.mod h1:uk88iVf1ovNn1iLfgUVU2F9o5eO30ui72
 github.com/garyburd/redigo v0.0.0-20150301180006-535138d7bcd7/go.mod h1:NR3MbYisc3/PwhQ00EMzDiPmrwpPxAn5GI05/YaO1SY=
 github.com/getsentry/raven-go v0.0.0-20190513200303-c977f96e1095/go.mod h1:KungGk8q33+aIAZUIVWZDr2OfAEBsO49PX4NzFV5kcQ=
 github.com/ghodss/yaml v0.0.0-20150909031657-73d445a93680/go.mod h1:4dBDuWmgqj2HViK6kFavaiC9ZROes6MMH2rRYeMEF04=
+github.com/ghodss/yaml v1.0.0 h1:wQHKEahhL6wmXdzwWG11gIVCkOv05bNOh+Rxn0yngAk=
 github.com/ghodss/yaml v1.0.0/go.mod h1:4dBDuWmgqj2HViK6kFavaiC9ZROes6MMH2rRYeMEF04=
 github.com/gin-contrib/sse v0.1.0/go.mod h1:RHrZQHXnP2xjPF+u1gW/2HnVO7nvIa9PG3Gm+fLHvGI=
 github.com/gin-gonic/gin v1.5.0/go.mod h1:Nd6IXA8m5kNZdNEHMBd93KT+mdY3+bewLgRvmCsR2Do=
@@ -564,6 +566,7 @@ github.com/gopherjs/gopherjs v0.0.0-20191106031601-ce3c9ade29de/go.mod h1:wJfORR
 github.com/gordonklaus/ineffassign v0.0.0-20210209182638-d0e41b2fc8ed/go.mod h1:M9mZEtGIsR1oDaZagNPNG9iq9n2HrhZ17dsXk73V3Lw=
 github.com/gorilla/context v1.1.1/go.mod h1:kBGZzfjB9CEq2AlWe17Uuf7NDRt0dE0s8S51q0aT7Yg=
 github.com/gorilla/handlers v0.0.0-20150720190736-60c7bfde3e33/go.mod h1:Qkdc/uu4tH4g6mTK6auzZ766c4CA0Ng8+o/OAirnOIQ=
+github.com/gorilla/handlers v1.4.2 h1:0QniY0USkHQ1RGCLfKxeNHK9bkDHGRYGNDFBCS+YARg=
 github.com/gorilla/handlers v1.4.2/go.mod h1:Qkdc/uu4tH4g6mTK6auzZ766c4CA0Ng8+o/OAirnOIQ=
 github.com/gorilla/mux v0.0.0-20191024121256-f395758b854c/go.mod h1:DVbg23sWSpFRCP0SfiEN6jmj59UnW/n46BH5rLB71So=
 github.com/gorilla/mux v1.6.2/go.mod h1:1lud6UwP+6orDFRuTfBEV8e9/aOM/c4fVVCaMa2zaAs=
@@ -694,6 +697,7 @@ github.com/juju/testing v0.0.0-20190613124551-e81189438503/go.mod h1:63prj8cnj0t
 github.com/julienschmidt/httprouter v1.2.0/go.mod h1:SYymIcj16QtmaHHD7aYtjjsJG7VTCxuUUipMqKk8s4w=
 github.com/jung-kurt/gofpdf v1.0.3-0.20190309125859-24315acbbda5/go.mod h1:7Id9E/uU8ce6rXgefFLlgrJj/GYY22cpxn+r32jIOes=
 github.com/k8snetworkplumbingwg/network-attachment-definition-client v0.0.0-20191119172530-79f836b90111/go.mod h1:MP2HbArq3QT+oVp8pmtHNZnSnkhdkHtDnc7h6nJXmBU=
+github.com/k8snetworkplumbingwg/network-attachment-definition-client v0.0.0-20200331171230-d50e42f2b669 h1:nRel0DZEZmfo2b1acDLKSUn30zMbHbwcrUNBx70w4B4=
 github.com/k8snetworkplumbingwg/network-attachment-definition-client v0.0.0-20200331171230-d50e42f2b669/go.mod h1:4r8AhhzVZsXfgVZ1A3cK/fWrX/uiFFH3rcv6WqwkOz8=
 github.com/karrick/godirwalk v1.16.1/go.mod h1:j4mkqPuvaLI8mp1DroR3P6ad7cyYd4c1qeJ3RV7ULlk=
 github.com/kelseyhightower/envconfig v1.4.0/go.mod h1:cccZRl6mQpaq41TPp5QxidR+Sa3axMbJDNb//FQX6Gg=
@@ -723,8 +727,10 @@ github.com/krolaw/dhcp4 v0.0.0-20180925202202-7cead472c414/go.mod h1:0AqAH3ZogsC
 github.com/kubernetes-csi/csi-lib-utils v0.6.1/go.mod h1:GVmlUmxZ+SUjVLXicRFjqWUUvWez0g0Y78zNV9t7KfQ=
 github.com/kubernetes-csi/csi-lib-utils v0.7.0/go.mod h1:bze+2G9+cmoHxN6+WyG1qT4MDxgZJMLGwc7V4acPNm0=
 github.com/kubernetes-csi/csi-test v2.0.0+incompatible/go.mod h1:YxJ4UiuPWIhMBkxUKY5c267DyA0uDZ/MtAimhx/2TA0=
+github.com/kubernetes-csi/external-snapshotter/v2 v2.1.1 h1:t5bmB3Y8nCaLA4aFrIpX0zjHEF/HUkJp6f5rm7BsVzM=
 github.com/kubernetes-csi/external-snapshotter/v2 v2.1.1/go.mod h1:dV5oB3U62KBdlf9ADWkMmjGd3USauqQtwIm2OZb5mqI=
 github.com/kubernetes-sigs/kube-storage-version-migrator v0.0.0-20191127225502-51849bc15f17/go.mod h1:enH0BVV+4+DAgWdwSlMefG8bBzTfVMTr1lApzdLZ/cc=
+github.com/kubernetes/dashboard v1.10.1 h1:RsBRF5S8DBH7lqGDJ8LjNiRt0C6PIvVeBrmuqmi/i3c=
 github.com/kubernetes/dashboard v1.10.1/go.mod h1:SLnjPMuDgwsEIPHCsd3eeMLm3mOvZijuujWxS9yT8xE=
 github.com/kubevirt/client-go v0.40.0-rc.2 h1:i0ZnLCQkKSS5xfEziyOiwiXxWE2j+f967kPlEn6rGAY=
 github.com/kubevirt/client-go v0.40.0-rc.2/go.mod h1:EQPLvWWu0uVbbyA+y16Jd3I+C1i7k104rE7VPeFk/mA=
@@ -743,8 +749,10 @@ github.com/lightstep/lightstep-tracer-common/golang/gogo v0.0.0-20190605223551-b
 github.com/lightstep/lightstep-tracer-go v0.18.1/go.mod h1:jlF1pusYV4pidLvZ+XD0UBX0ZE6WURAspgAczcDHrL4=
 github.com/lithammer/dedent v1.1.0/go.mod h1:jrXYCQtgg0nJiN+StA2KgR7w6CiQNv9Fd/Z9BP0jIOc=
 github.com/longhorn/backupstore v0.0.0-20201203004625-fdbdd88b09d6/go.mod h1:9O5tXHnI0KfLXHl+YVey17h9DNq6EIJmBCnNfZH1e18=
+github.com/longhorn/go-iscsi-helper v0.0.0-20201111045018-ee87992ec536 h1:+Z/mGnoCdY+YCX+y4X19E2YT4FsVA3aVm7uLj1tg/wM=
 github.com/longhorn/go-iscsi-helper v0.0.0-20201111045018-ee87992ec536/go.mod h1:9z/y9glKmWEdV50tjlUPxFwi1goQfIrrsoZbnMyIZbY=
 github.com/longhorn/longhorn-instance-manager v0.0.0-20201016215346-d8437b4e156e/go.mod h1:SfnIsnFj+HdmRiyF2buQ6+CB1WTD1pDQ4zEE6lBLs4s=
+github.com/longhorn/longhorn-manager v1.1.0 h1:biOZv1fzEUnL83IPfsv+YZw5vspMkgS84Wxs4JijOFk=
 github.com/longhorn/longhorn-manager v1.1.0/go.mod h1:h2q+OgktnaFU3nFILh3umfR8vWywg9D2iTtdUry/JiY=
 github.com/longhorn/nsfilelock v0.0.0-20200723175406-fa7c83ad0003/go.mod h1:0CLeXlf59Lg6C0kjLSDf47ft73Dh37CwymYRKWwAn04=
 github.com/lpabon/godbc v0.1.1/go.mod h1:Jo9QV0cf3U6jZABgiJ2skINAXb9j8m51r07g4KI92ZA=
@@ -1036,6 +1044,7 @@ github.com/quobyte/api v0.1.8/go.mod h1:jL7lIHrmqQ7yh05OJ+eEEdHr0u/kmT1Ff9iHd+4H
 github.com/rackspace/gophercloud v0.0.0-20150408191457-ce0f487f6747/go.mod h1:4bJ1FwuaBZ6dt1VcDX5/O662mwR8GWqS4l68H6hkoYQ=
 github.com/rancher/dynamiclistener v0.2.1-0.20200714201033-9c1939da3af9/go.mod h1:qr0QfhwzcVCR+Ao9WyfnE+jmOpfEAdRhXtNOZGJ3nCQ=
 github.com/rancher/dynamiclistener v0.2.1-0.20200910203214-85f32491cb09/go.mod h1:qr0QfhwzcVCR+Ao9WyfnE+jmOpfEAdRhXtNOZGJ3nCQ=
+github.com/rancher/eks-operator v1.0.6 h1:LR+vQwWo+vp+13ZAUjH0XdZLWigOuGaT2i7s6031tzo=
 github.com/rancher/eks-operator v1.0.6/go.mod h1:GB2kyPtIN0r+DGlUcDgEUMsB4qRwZH7OKsraemZT+GA=
 github.com/rancher/go-rancher v0.1.1-0.20190307222549-9756097e5e4c/go.mod h1:7oQvGNiJsGvrUgB+7AH8bmdzuR0uhULfwKb43Ht0hUk=
 github.com/rancher/kubernetes-provider-detector v0.1.2/go.mod h1:ypuJS7kP7rUiAn330xG46mj+Nhvym05GM8NqMVekpH0=
@@ -1053,18 +1062,23 @@ github.com/rancher/machine v0.15.0-rancher25/go.mod h1:Q7gKLOkNb8z8A/fYUhHFJ/ChJ
 github.com/rancher/norman v0.0.0-20200517050325-f53cae161640/go.mod h1:92rz/7QN7DOeLQZlJY/8aFBOmF085igIVguR0wpxLas=
 github.com/rancher/norman v0.0.0-20200714195611-b3163ad4ebc4/go.mod h1:W9LfZ96OfjkWSGTy2DUqYPt47Jpzrs7eM0i3AAx6fOI=
 github.com/rancher/norman v0.0.0-20200820172041-261460ee9088/go.mod h1:W9LfZ96OfjkWSGTy2DUqYPt47Jpzrs7eM0i3AAx6fOI=
+github.com/rancher/norman v0.0.0-20210225010917-c7fd1e24145b h1:4SV/mEqaGmwvAV5XIO+hRqacZR1KyW6sTqzFNIlyTAY=
 github.com/rancher/norman v0.0.0-20210225010917-c7fd1e24145b/go.mod h1:hhnf77V2lmZD7cvUqi4vTBpIs3KpHNL/AmuN0MqEClI=
 github.com/rancher/pkg v0.0.0-20190514055449-b30ab9de040e/go.mod h1:XbYHTPaXuw8ZY9bylhYKQh/nJxDaTKk3YhAxPl4Qy/k=
+github.com/rancher/rancher v0.0.0-20210312225102-c824d91cd247 h1:OdBgxWKclGwn08SJt6DBTyA9gZm+DPOvm7LXDh4s9OE=
 github.com/rancher/rancher v0.0.0-20210312225102-c824d91cd247/go.mod h1:C06hliizp9Q6LfiorySWmPwCn/F4lOnw00sWCpSQJqg=
+github.com/rancher/rancher/pkg/apis v0.0.0-20210304063736-65f7c844267b h1:yCt3qAPZqlp2slhLmlSo/u1Ka09oonm0tY7T279KiKA=
 github.com/rancher/rancher/pkg/apis v0.0.0-20210304063736-65f7c844267b/go.mod h1:U8/Kq8iHx5CCgZL6hPTKEv6kD4rvJGG+1FnUfXJYsDE=
 github.com/rancher/rancher/pkg/client v0.0.0-20210304063736-65f7c844267b/go.mod h1:iUy4JIYYA0BBQ7nFxueLJYDCYg7Hhoo+VY5t9HQXmlc=
 github.com/rancher/rdns-server v0.0.0-20180802070304-bf662911db6a/go.mod h1:YW8wJ/coee2n9ed937uPBWQArBaVlxs+5wkkS9KiyDc=
 github.com/rancher/remotedialer v0.2.6-0.20200820180140-e5448aaba7ee/go.mod h1:dbzn9NF1JWbGEHL6Q/1KG4KFROILiY/j6wmfF1Np3fk=
+github.com/rancher/rke v1.2.6 h1:uCdGsnrKhwP8a0hu41eJHH6W9eTPHVbr6UFiDjb+zWE=
 github.com/rancher/rke v1.2.6/go.mod h1:osU/R8vPjgV3AwNnPamC0eOZ6aI0UfpHTyZ5K/b/vZE=
 github.com/rancher/security-scan v0.1.7-0.20200222041501-f7377f127168/go.mod h1:WlLAocVyVQs5J8r0IiQXsp0ajVZO6hYi/Vo6zxjo73s=
 github.com/rancher/steve v0.0.0-20210126001943-00da04b7d566/go.mod h1:i0zwVjesOJEC2OrZTzd0IAdFo708PlVp27Be7vujPt4=
 github.com/rancher/steve v0.0.0-20210302143000-362617a677a9/go.mod h1:ezXRVx4Z86On/Dt1jN5b9ATsE9cmM8uvY7wQCm/02rQ=
 github.com/rancher/system-upgrade-controller/pkg/apis v0.0.0-20200825145542-a04e2061be24/go.mod h1:f8UA6yw5xPtSspqXUQZNfs7bTyG0UOfzJz7zOkegir4=
+github.com/rancher/system-upgrade-controller/pkg/apis v0.0.0-20201117180404-6f0145c68124 h1:Fh9sFtLVbxstFjLs5ZR0gb8bb6TEBPPb4oiylJedxOw=
 github.com/rancher/system-upgrade-controller/pkg/apis v0.0.0-20201117180404-6f0145c68124/go.mod h1:Ja346o44aTPWADc/5Jm93+KgctT6KtftuOosgz0F2AM=
 github.com/rancher/wrangler v0.5.4-0.20200326191509-4054411d9736/go.mod h1:L4HtjPeX8iqLgsxfJgz+JjKMcX2q3qbRXSeTlC/CSd4=
 github.com/rancher/wrangler v0.6.1/go.mod h1:L4HtjPeX8iqLgsxfJgz+JjKMcX2q3qbRXSeTlC/CSd4=
@@ -1104,6 +1118,7 @@ github.com/samalba/dockerclient v0.0.0-20151231000007-f661dd4754aa/go.mod h1:yeY
 github.com/samuel/go-zookeeper v0.0.0-20190923202752-2cc03de413da/go.mod h1:gi+0XIa01GRL2eRQVjQkKGqKF3SF9vZR/HnPullcV2E=
 github.com/satori/go.uuid v0.0.0-20151028231719-d41af8bb6a77/go.mod h1:dA0hQrYB0VpLJoorglMZABFdXlWrHn1NEOzdhQKdks0=
 github.com/satori/go.uuid v1.0.0/go.mod h1:dA0hQrYB0VpLJoorglMZABFdXlWrHn1NEOzdhQKdks0=
+github.com/satori/go.uuid v1.2.0 h1:0uYX9dsZ2yD7q2RtLRtPSdGDWzjeM3TbMJP9utgA0ww=
 github.com/satori/go.uuid v1.2.0/go.mod h1:dA0hQrYB0VpLJoorglMZABFdXlWrHn1NEOzdhQKdks0=
 github.com/sclevine/spec v1.0.0/go.mod h1:W4J29eT/Kzv7/b9IWLB055Z+qvVC9vt0Arko24q7p+U=
 github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529/go.mod h1:DxrIzT+xaE7yg65j358z/aeFdxmN0P9QXhEzd20vsDc=
@@ -1714,6 +1729,7 @@ gopkg.in/natefinch/lumberjack.v2 v2.0.0 h1:1Lc07Kr7qY4U2YPouBjpCLxpiyxIVoxqXgkXL
 gopkg.in/natefinch/lumberjack.v2 v2.0.0/go.mod h1:l0ndWWf7gzL7RNwBG7wST/UCcT4T24xpD6X8LsfU/+k=
 gopkg.in/resty.v1 v1.12.0/go.mod h1:mDo4pnntr5jdWRML875a/NmxYqAlA73dVijT2AXvQQo=
 gopkg.in/square/go-jose.v2 v2.2.2/go.mod h1:M9dMgbHiYLoDGQrXy7OpJDJWiKiU//h+vD76mk0e1AI=
+gopkg.in/square/go-jose.v2 v2.3.1 h1:SK5KegNXmKmqE342YYN2qPHEnUYeoMiXXl1poUlI+o4=
 gopkg.in/square/go-jose.v2 v2.3.1/go.mod h1:M9dMgbHiYLoDGQrXy7OpJDJWiKiU//h+vD76mk0e1AI=
 gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 h1:uRGJdciOHaEIrze2W8Q3AKkepLTh2hOroT7a+7czfdQ=
 gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7/go.mod h1:dt/ZhP58zS4L8KSrWDmTeBkI65Dw0HsyUHuEVlX15mw=
@@ -1781,6 +1797,7 @@ k8s.io/gengo v0.0.0-20200114144118-36b2048a9120/go.mod h1:ezvh/TsK7cY6rbqRK0oQQ8
 k8s.io/gengo v0.0.0-20200413195148-3a45101e95ac/go.mod h1:ezvh/TsK7cY6rbqRK0oQQ8IAqLxYwwyPxAX1Pzy0ii0=
 k8s.io/gengo v0.0.0-20201113003025-83324d819ded/go.mod h1:FiNAH4ZV3gBg2Kwh89tzAEV2be7d5xI0vBa/VySYy3E=
 k8s.io/gengo v0.0.0-20201214224949-b6c5ce23f027/go.mod h1:FiNAH4ZV3gBg2Kwh89tzAEV2be7d5xI0vBa/VySYy3E=
+k8s.io/gengo v0.0.0-20210203185629-de9496dff47b h1:bAU8IlrMA6KbP0dIg/sVSJn95pDCUHDZx0DpTGrf2v4=
 k8s.io/gengo v0.0.0-20210203185629-de9496dff47b/go.mod h1:FiNAH4ZV3gBg2Kwh89tzAEV2be7d5xI0vBa/VySYy3E=
 k8s.io/heapster v1.2.0-beta.1/go.mod h1:h1uhptVXMwC8xtZBYsPXKVi8fpdlYkTs6k949KozGrM=
 k8s.io/helm v2.16.7+incompatible/go.mod h1:LZzlS4LQBHfciFOurYBFkCMTaZ0D1l+p0teMg7TSULI=
@@ -1824,6 +1841,7 @@ k8s.io/utils v0.0.0-20201110183641-67b214c5f920 h1:CbnUZsM497iRC5QMVkHwyl8s2tB3g
 k8s.io/utils v0.0.0-20201110183641-67b214c5f920/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
 kubevirt.io/controller-lifecycle-operator-sdk v0.1.2 h1:oFucZCV1JrjkLWy838kpozgPsYBioPNqZVwtw9wJP9E=
 kubevirt.io/controller-lifecycle-operator-sdk v0.1.2/go.mod h1:M+UuZsp90mmKUVGb5zXDZtIIY1noY5pJk9i2YCQwSnk=
+kubevirt.io/kubevirt v0.40.0 h1:rOj4LbM4k3byx1FqKUx6TWLwI/Tm1+O4wN+CmrXVpYM=
 kubevirt.io/kubevirt v0.40.0/go.mod h1:ict4gmDJ/mOHvI8/pF3LIsOUMmJqaEo0/CHsbLLDj8w=
 kubevirt.io/qe-tools v0.1.6/go.mod h1:PJyH/YXC4W0AmxfheDmXWMbLNsMSboVGXKpMAwfKzVE=
 launchpad.net/gocheck v0.0.0-20140225173054-000000000087/go.mod h1:hj7XX3B/0A+80Vse0e+BUHsHMTEhd0O4cpUHr/e/BUM=
