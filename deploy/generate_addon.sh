@@ -41,8 +41,8 @@ create_role() {
       resources: [ 'loadbalancers' ]
       verbs: [ 'get', 'watch', 'list', 'update', 'create', 'delete' ]
     - apiGroups: [ 'kubevirt.io' ]
-      resources: [ 'virtualmachines' ]
-      verbs: [ 'get' ]
+      resources: [ 'virtualmachines', 'virtualmachineinstances' ]
+      verbs: [ 'get', 'watch', 'list' ]
   " | kubectl apply -f -
 }
 
