@@ -596,6 +596,8 @@ github.com/grpc-ecosystem/grpc-health-probe v0.2.0/go.mod h1:4GVx/bTCtZaSzhjbGue
 github.com/guonaihong/gout v0.1.3/go.mod h1:vXvv5Kxr70eM5wrp4F0+t9lnLWmq+YPW2GByll2f/EA=
 github.com/harvester/harvester v0.2.0 h1:hAhFWs4zGVrriGhqAKtFuMXvSu6dWPm6vo16+gi1XFU=
 github.com/harvester/harvester v0.2.0/go.mod h1:hl4qFDVTpNkmJlZOdTzACz7cFD7a3hhsQl6F2i439EQ=
+github.com/harvester/harvester-load-balancer v0.1.2 h1:AiFN7H8IHvc6ntqeuYN4lJfwMx/0yTlKvnDZ284xA8k=
+github.com/harvester/harvester-load-balancer v0.1.2/go.mod h1:ztQop/yaRzzdiIlMYSenHi3WnvgD+4J0v92uFijrK6U=
 github.com/hashicorp/consul/api v1.1.0/go.mod h1:VmuI/Lkw1nC05EYQWNKwWGbkg+FbDBtguAZLlVdkD9Q=
 github.com/hashicorp/consul/api v1.3.0/go.mod h1:MmDNSzIMUjNpY/mQ398R4bk2FnqQLoPndWW5VkKPlCE=
 github.com/hashicorp/consul/sdk v0.1.1/go.mod h1:VKf9jXwCTEY1QZP2MOLRhb5i/I/ssyNV1vwHyQBF0x8=
@@ -1244,8 +1246,6 @@ github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2/go.mod h1:UETIi67q
 github.com/xlab/handysort v0.0.0-20150421192137-fb3537ed64a1/go.mod h1:QcJo0QPSfTONNIgpN5RA8prR7fF8nkF6cTWTcNerRO8=
 github.com/xlab/treeprint v0.0.0-20181112141820-a009c3971eca/go.mod h1:ce1O1j6UtZfjr22oyGxGLbauSBp2YVXpARAosm7dHBg=
 github.com/xordataexchange/crypt v0.0.3-0.20170626215501-b2862e3d0a77/go.mod h1:aYKd//L2LvnjZzWKhF00oedf4jCCReLcmhLdhm1A27Q=
-github.com/yaocw2020/harvester-load-balancer v0.0.0-20210719071752-e6af90508d8e h1:YScWETijnqBiTnMdsmkTeO7GlJt1CLQXqmQg4wH49ug=
-github.com/yaocw2020/harvester-load-balancer v0.0.0-20210719071752-e6af90508d8e/go.mod h1:ztQop/yaRzzdiIlMYSenHi3WnvgD+4J0v92uFijrK6U=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.3.5/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=
