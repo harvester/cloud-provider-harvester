@@ -14,6 +14,7 @@ import (
 
 type instanceManager struct {
 	vmClient  ctlkubevirtv1.VirtualMachineClient
+	vmiClient ctlkubevirtv1.VirtualMachineInstanceClient
 	namespace string
 }
 
@@ -30,7 +31,7 @@ func newInstanceManager(cfg *rest.Config, namespace string) (cloudprovider.Insta
 }
 
 func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bool, error) {
-	if _, err := i.vmClient.Get(i.namespace, node.Name, metav1.GetOptions{}); err != nil && !errors.IsNotFound(err) {
+	if _, err := i.vmiClient.Get(i.namespace, node.Name, metav1.GetOptions{}); err != nil && !errors.IsNotFound(err) {
 		return false, err
 	} else if errors.IsNotFound(err) {
 		return false, nil
@@ -48,11 +49,23 @@ func (i *instanceManager) InstanceShutdown(ctx context.Context, node *v1.Node) (
 }
 
 func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (*cloudprovider.InstanceMetadata, error) {
-	vm, err := i.vmClient.Get(i.namespace, node.Name, metav1.GetOptions{})
+	vmi, err := i.vmiClient.Get(i.namespace, node.Name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return &cloudprovider.InstanceMetadata{
-		ProviderID: ProviderName + "://" + string(vm.UID),
-	}, nil
+
+	// Set node topology metadata from virtual machine annotations
+	meta := cloudprovider.InstanceMetadata{
+		ProviderID: ProviderName + "://" + string(vmi.UID),
+	}
+
+	annotations := vmi.GetAnnotations()
+	if region, ok := annotations[v1.LabelTopologyRegion]; ok {
+		meta.Region = region
+	}
+	if zone, ok := annotations[v1.LabelTopologyZone]; ok {
+		meta.Zone = zone
+	}
+
+	return &meta, nil
 }
