@@ -10,8 +10,8 @@ import (
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:shortName=lb;lbs,scope=Namespaced
 // +kubebuilder:printcolumn:name="DESCRIPTION",type=string,JSONPath=`.spec.description`
-// +kubebuilder:printcolumn:name="TYPE",type=string,JSONPath=`.spec.ipam`
-// +kubebuilder:printcolumn:name="EXTERNAL-ADDRESS",type=string,JSONPath=`.status.address`
+// +kubebuilder:printcolumn:name="IPAM",type=string,JSONPath=`.spec.ipam`
+// +kubebuilder:printcolumn:name="ADDRESS",type=string,JSONPath=`.status.address`
 
 type LoadBalancer struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -75,10 +75,10 @@ var (
 	LoadBalancerReady condition.Cond = "Ready"
 )
 
-// +kubebuilder:validation:Enum=pool;DHCP
+// +kubebuilder:validation:Enum=pool;dhcp
 type IPAM string
 
 var (
 	Pool IPAM = "pool"
-	DHCP IPAM = "DHCP"
+	DHCP IPAM = "dhcp"
 )
