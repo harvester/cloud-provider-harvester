@@ -56,7 +56,7 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 
 	// Set node topology metadata from virtual machine annotations
 	meta := cloudprovider.InstanceMetadata{
-		ProviderID: ProviderName + "://" + string(vm.UID),
+		ProviderID: ProviderName + "://" + string(vmi.UID),
 	}
 	annotations := vmi.GetAnnotations()
 	if region, ok := annotations[ctlvm.AnnotationTopologyRegion]; ok {
