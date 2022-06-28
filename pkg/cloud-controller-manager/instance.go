@@ -18,6 +18,7 @@ type instanceManager struct {
 	namespace string
 }
 
+// newInstanceManager Instance is equivalent to VirtualMachine in harvester, not VirtualMachineInstance
 func newInstanceManager(cfg *rest.Config, namespace string) (cloudprovider.InstancesV2, error) {
 	kubevirtFactory, err := ctlkubevirt.NewFactoryFromConfig(cfg)
 	if err != nil {
@@ -26,12 +27,13 @@ func newInstanceManager(cfg *rest.Config, namespace string) (cloudprovider.Insta
 
 	return &instanceManager{
 		vmClient:  kubevirtFactory.Kubevirt().V1().VirtualMachine(),
+		vmiClient: kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
 		namespace: namespace,
 	}, nil
 }
 
 func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bool, error) {
-	if _, err := i.vmiClient.Get(i.namespace, node.Name, metav1.GetOptions{}); err != nil && !errors.IsNotFound(err) {
+	if _, err := i.vmClient.Get(i.namespace, node.Name, metav1.GetOptions{}); err != nil && !errors.IsNotFound(err) {
 		return false, err
 	} else if errors.IsNotFound(err) {
 		return false, nil
@@ -45,18 +47,26 @@ func (i *instanceManager) InstanceShutdown(ctx context.Context, node *v1.Node) (
 	if err != nil {
 		return false, err
 	}
-	return !*vm.Spec.Running, nil
+	return !vm.Status.Ready, nil
 }
 
 func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (*cloudprovider.InstanceMetadata, error) {
-	vmi, err := i.vmiClient.Get(i.namespace, node.Name, metav1.GetOptions{})
+	vm, err := i.vmClient.Get(i.namespace, node.Name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
 
 	// Set node topology metadata from virtual machine annotations
-	meta := cloudprovider.InstanceMetadata{
-		ProviderID: ProviderName + "://" + string(vmi.UID),
+	meta := &cloudprovider.InstanceMetadata{
+		ProviderID: ProviderName + "://" + string(vm.UID),
+	}
+
+	vmi, err := i.vmiClient.Get(i.namespace, node.Name, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return meta, nil
+		}
+		return nil, err
 	}
 
 	annotations := vmi.GetAnnotations()
@@ -67,5 +77,5 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 		meta.Zone = zone
 	}
 
-	return &meta, nil
+	return meta, nil
 }
