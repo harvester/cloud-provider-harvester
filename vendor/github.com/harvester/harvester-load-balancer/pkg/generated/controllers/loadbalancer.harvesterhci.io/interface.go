@@ -19,12 +19,12 @@ limitations under the License.
 package loadbalancer
 
 import (
-	v1alpha1 "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io/v1alpha1"
+	v1beta1 "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io/v1beta1"
 	"github.com/rancher/lasso/pkg/controller"
 )
 
 type Interface interface {
-	V1alpha1() v1alpha1.Interface
+	V1beta1() v1beta1.Interface
 }
 
 type group struct {
@@ -38,6 +38,6 @@ func New(controllerFactory controller.SharedControllerFactory) Interface {
 	}
 }
 
-func (g *group) V1alpha1() v1alpha1.Interface {
-	return v1alpha1.New(g.controllerFactory)
+func (g *group) V1beta1() v1beta1.Interface {
+	return v1beta1.New(g.controllerFactory)
 }
