@@ -12,7 +12,7 @@ fi
 SERVICE_ACCOUNT_NAME=$1
 ROLE_BINDING_NAME=$1
 NAMESPACE="$2"
-ROLE_NAME="harvester-cloud-provider"
+CLUSTER_ROLE_NAME="harvesterhci.io:cloudprovider"
 KUBECFG_FILE_NAME="./tmp/kube/k8s-${SERVICE_ACCOUNT_NAME}-${NAMESPACE}-conf"
 TARGET_FOLDER="./tmp/kube"
 
@@ -28,27 +28,9 @@ create_service_account() {
   kubectl create sa "${SERVICE_ACCOUNT_NAME}" --namespace "${NAMESPACE}" --dry-run -o yaml | kubectl apply -f -
 }
 
-create_role() {
-  echo -e "\\nCreating a role in ${NAMESPACE} namespace: ${ROLE_NAME}"
-  echo "
-  apiVersion: rbac.authorization.k8s.io/v1
-  kind: Role
-  metadata:
-    name: harvester-cloud-provider
-    namespace: ${NAMESPACE}
-  rules:
-    - apiGroups: [ 'loadbalancer.harvesterhci.io' ]
-      resources: [ 'loadbalancers' ]
-      verbs: [ 'get', 'watch', 'list', 'update', 'create', 'delete' ]
-    - apiGroups: [ 'kubevirt.io' ]
-      resources: [ 'virtualmachines' ]
-      verbs: [ 'get' ]
-  " | kubectl apply -f -
-}
-
 create_rolebinding() {
   echo -e "\\nCreating a rolebinding in ${NAMESPACE} namespace: ${ROLE_BINDING_NAME}"
-  kubectl create rolebinding ${ROLE_BINDING_NAME} --serviceaccount=${NAMESPACE}:${SERVICE_ACCOUNT_NAME} --role=${ROLE_NAME} --dry-run -o yaml | kubectl apply -f -
+  kubectl create rolebinding ${ROLE_BINDING_NAME} --serviceaccount=${NAMESPACE}:${SERVICE_ACCOUNT_NAME} --clusterrole=${CLUSTER_ROLE_NAME} --namespace "${NAMESPACE}" --dry-run -o yaml | kubectl apply -f -
 }
 
 get_secret_name_from_service_account() {
@@ -110,7 +92,6 @@ set_kube_config_values() {
 
 create_target_folder
 create_service_account
-create_role
 create_rolebinding
 get_secret_name_from_service_account
 extract_ca_crt_from_secret
