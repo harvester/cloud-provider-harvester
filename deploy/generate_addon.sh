@@ -30,20 +30,20 @@ create_service_account() {
 
 create_role() {
   echo -e "\\nCreating a role in ${NAMESPACE} namespace: ${ROLE_NAME}"
-  echo "
-  apiVersion: rbac.authorization.k8s.io/v1
-  kind: Role
-  metadata:
-    name: harvester-cloud-provider
-    namespace: ${NAMESPACE}
-  rules:
-    - apiGroups: [ 'loadbalancer.harvesterhci.io' ]
-      resources: [ 'loadbalancers' ]
-      verbs: [ 'get', 'watch', 'list', 'update', 'create', 'delete' ]
-    - apiGroups: [ 'kubevirt.io' ]
-      resources: [ 'virtualmachines' ]
-      verbs: [ 'get' ]
-  " | kubectl apply -f -
+  cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: harvester-cloud-provider
+  namespace: ${NAMESPACE}
+rules:
+  - apiGroups: [ 'loadbalancer.harvesterhci.io' ]
+    resources: [ 'loadbalancers' ]
+    verbs: [ 'get', 'watch', 'list', 'update', 'create', 'delete' ]
+  - apiGroups: [ 'kubevirt.io' ]
+    resources: [ 'virtualmachines' ]
+    verbs: [ 'get' ]
+EOF
 }
 
 create_rolebinding() {
@@ -52,20 +52,52 @@ create_rolebinding() {
 }
 
 get_secret_name_from_service_account() {
-  echo -e "\\nGetting secret of service account ${SERVICE_ACCOUNT_NAME} on ${NAMESPACE}"
-  SECRET_NAME=$(kubectl get sa "${SERVICE_ACCOUNT_NAME}" --namespace="${NAMESPACE}" -o jsonpath="{.secrets[].name}")
+  read -r SERVER_MAJOR_VERSION SERVER_MINOR_VERSION < <(kubectl version -ojson | jq -r '[.serverVersion | .major, .minor] | join(" ")')
+  if [ "${SERVER_MAJOR_VERSION}" -ge 1 ] && [ "${SERVER_MINOR_VERSION}" -ge 24 ]; then
+    SECRET_NAME="${SERVICE_ACCOUNT_NAME}-token"
+    echo -e "\\nGetting uid of service account ${SERVICE_ACCOUNT_NAME} on ${NAMESPACE}"
+    SERVICE_ACCOUNT_UID=$(kubectl get sa "${SERVICE_ACCOUNT_NAME}" --namespace "${NAMESPACE}" -o jsonpath="{.metadata.uid}")
+    echo "Service Account uid: ${SERVICE_ACCOUNT_UID}"
+    echo -e "\\nCreating a user token secret in ${NAMESPACE} namespace: ${SECRET_NAME}"
+    cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  annotations:
+    kubernetes.io/service-account.name: ${SERVICE_ACCOUNT_NAME}
+    kubernetes.io/service-account.uid: ${SERVICE_ACCOUNT_UID}
+  name: ${SECRET_NAME}
+  namespace: ${NAMESPACE}
+  ownerReferences:
+  - apiVersion: v1
+    kind: ServiceAccount
+    name: ${SERVICE_ACCOUNT_NAME}
+    uid: ${SERVICE_ACCOUNT_UID}
+type: kubernetes.io/service-account-token
+EOF
+  else
+    while [ -z "${SECRET_NAME}" ]; do
+    echo -e "\\nGetting secret of service account ${SERVICE_ACCOUNT_NAME} on ${NAMESPACE}"
+    SECRET_NAME=$(kubectl get sa "${SERVICE_ACCOUNT_NAME}" --namespace="${NAMESPACE}" -o jsonpath="{.secrets[].name}")
+    done
+  fi
   echo "Secret name: ${SECRET_NAME}"
 }
 
 extract_ca_crt_from_secret() {
-  echo -e -n "\\nExtracting ca.crt from secret..."
-  kubectl get secret --namespace "${NAMESPACE}" "${SECRET_NAME}" -o jsonpath="{.data.ca\.crt}" | base64 -d >"${TARGET_FOLDER}/ca.crt"
+  while [ -z "${CA_CRT}" ]; do
+    echo -e -n "\\nExtracting ca.crt from secret..."
+    CA_CRT=$(kubectl get secret --namespace "${NAMESPACE}" "${SECRET_NAME}" -o jsonpath="{.data.ca\.crt}")
+  done
+  echo "${CA_CRT}" | base64 -d >"${TARGET_FOLDER}/ca.crt"
   printf "done"
 }
 
 get_user_token_from_secret() {
-  echo -e -n "\\nGetting user token from secret..."
-  USER_TOKEN=$(kubectl get secret --namespace "${NAMESPACE}" "${SECRET_NAME}" -o jsonpath="{.data.token}" | base64 -d)
+  while [ -z "${USER_TOKEN}" ]; do
+    echo -e -n "\\nGetting user token from secret..."
+    USER_TOKEN=$(kubectl get secret --namespace "${NAMESPACE}" "${SECRET_NAME}" -o jsonpath="{.data.token}" | base64 -d)
+  done
   printf "done"
 }
 
