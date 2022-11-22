@@ -41,14 +41,14 @@ rules:
     resources: [ 'loadbalancers' ]
     verbs: [ 'get', 'watch', 'list', 'update', 'create', 'delete' ]
   - apiGroups: [ 'kubevirt.io' ]
-    resources: [ 'virtualmachines' ]
+    resources: [ 'virtualmachines', 'virtualmachineinstances' ]
     verbs: [ 'get' ]
 EOF
 }
 
 create_rolebinding() {
   echo -e "\\nCreating a rolebinding in ${NAMESPACE} namespace: ${ROLE_BINDING_NAME}"
-  kubectl create rolebinding ${ROLE_BINDING_NAME} --serviceaccount=${NAMESPACE}:${SERVICE_ACCOUNT_NAME} --role=${ROLE_NAME} --dry-run -o yaml | kubectl apply -f -
+  kubectl -n ${NAMESPACE} create rolebinding ${ROLE_BINDING_NAME} --serviceaccount=${NAMESPACE}:${SERVICE_ACCOUNT_NAME} --role=${ROLE_NAME} --dry-run -o yaml | kubectl apply -f -
 }
 
 get_secret_name_from_service_account() {
@@ -150,4 +150,15 @@ get_user_token_from_secret
 set_kube_config_values
 echo "########## cloud config ############"
 cat ${KUBECFG_FILE_NAME}
+echo
+echo "########## cloud-init user data ############"
+KUBECONFIG_B64=$(base64 -w 0 < "${KUBECFG_FILE_NAME}")
+cat <<EOF
+write_files:
+- encoding: b64
+  content: ${KUBECONFIG_B64}
+  owner: root:root
+  path: /etc/kubernetes/cloud-config
+  permissions: '0644'
+EOF
 rm -r ${TARGET_FOLDER}
