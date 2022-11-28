@@ -152,7 +152,11 @@ echo "########## cloud config ############"
 cat ${KUBECFG_FILE_NAME}
 echo
 echo "########## cloud-init user data ############"
-KUBECONFIG_B64=$(base64 -w 0 < "${KUBECFG_FILE_NAME}")
+if [[ $OSTYPE == 'darwin'* ]]; then
+  KUBECONFIG_B64=$(base64 -b 0 < "${KUBECFG_FILE_NAME}")
+else
+  KUBECONFIG_B64=$(base64 -w 0 < "${KUBECFG_FILE_NAME}")
+fi
 cat <<EOF
 write_files:
 - encoding: b64
