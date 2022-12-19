@@ -2,6 +2,7 @@ package ccm
 
 import (
 	"context"
+	"net"
 
 	ctlkubevirt "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io"
 	ctlkubevirtv1 "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1"
@@ -10,6 +11,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	cloudprovider "k8s.io/cloud-provider"
+	"k8s.io/cloud-provider/api"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
 type instanceManager struct {
@@ -77,5 +80,41 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 		meta.Zone = zone
 	}
 
+	meta.NodeAddresses = getNodeAddresses(node, vmi)
+
 	return meta, nil
+}
+
+// getNodeAddresses return nodeAddresses only when the value of annotation `alpha.kubernetes.io/provided-node-ip` is not empty
+func getNodeAddresses(node *v1.Node, vmi *kubevirtv1.VirtualMachineInstance) []v1.NodeAddress {
+	providedNodeIP, ok := node.Annotations[api.AnnotationAlphaProvidedIPAddr]
+	if !ok {
+		return nil
+	}
+
+	nodeAddresses := make([]v1.NodeAddress, 0, len(vmi.Spec.Networks)+1)
+
+	for _, network := range vmi.Spec.Networks {
+		for _, networkInterface := range vmi.Status.Interfaces {
+			if network.Name == networkInterface.Name {
+				if ip := net.ParseIP(networkInterface.IP); ip != nil && ip.To4() != nil {
+					nodeAddr := v1.NodeAddress{
+						Address: networkInterface.IP,
+					}
+					if networkInterface.IP == providedNodeIP {
+						nodeAddr.Type = v1.NodeInternalIP
+					} else {
+						nodeAddr.Type = v1.NodeExternalIP
+					}
+					nodeAddresses = append(nodeAddresses, nodeAddr)
+				}
+			}
+		}
+	}
+	nodeAddresses = append(nodeAddresses, v1.NodeAddress{
+		Type:    v1.NodeHostName,
+		Address: node.Name,
+	})
+
+	return nodeAddresses
 }
