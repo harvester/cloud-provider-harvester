@@ -13,6 +13,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/rest"
 	cloudprovider "k8s.io/cloud-provider"
@@ -25,6 +26,7 @@ const (
 	clusterNameKey       = prefix + "cluster"
 
 	maxNameLength = 63
+	lenOfSuffix   = 8
 )
 
 type LoadBalancerManager struct {
@@ -65,19 +67,26 @@ func (l *LoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName s
 }
 
 func (l *LoadBalancerManager) GetLoadBalancerName(ctx context.Context, clusterName string, service *v1.Service) string {
-	name := clusterName + "-" + service.Namespace + "-" + service.Name + "-"
+	return loadBalancerName(clusterName, service.Namespace, service.Name, string(service.UID))
+}
 
-	digest := crc32.ChecksumIEEE([]byte(name + string(service.UID)))
+// The name must be a valid [RFC 1035 label name](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names).
+// If cluster name doesn't start with an alphabetic character, add "a" as prefix to make the name as compliant as possible with the RFC1035 standard.
+// If the name doesn't meet the standard, the CURD actions with the name will fail and return an error.
+func loadBalancerName(clusterName, serviceNamespace, serviceName, serviceUid string) string {
+	if len(validation.IsDNS1035Label(clusterName)) > 0 {
+		clusterName = "a" + clusterName
+	}
+	base := clusterName + "-" + serviceNamespace + "-" + serviceName + "-"
+	digest := crc32.ChecksumIEEE([]byte(base + serviceUid))
 	suffix := fmt.Sprintf("%08x", digest) // print in 8 width and pad with 0's
-	name += suffix
 
-	// The name of a Service object must be a valid [RFC 1035 label name](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names)
-	// The name contains no more than 63 characters
-	if len(name) > maxNameLength {
-		name = name[:maxNameLength]
+	// The name contains no more than 63 characters.
+	if len(base) > maxNameLength-lenOfSuffix {
+		base = base[:maxNameLength-lenOfSuffix]
 	}
 
-	return name
+	return base + suffix
 }
 
 // EnsureLoadBalancer is to create/update a Harvester load balancer for the service and return the loadBalancerStatus with an IP
