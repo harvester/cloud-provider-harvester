@@ -2,19 +2,16 @@ package ccm
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
+	ctllb "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io"
 	ctlkubevirt "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io"
 	ctlcore "github.com/rancher/wrangler/pkg/generated/controllers/core"
 	"github.com/rancher/wrangler/pkg/kubeconfig"
 	"github.com/rancher/wrangler/pkg/signals"
 	"github.com/rancher/wrangler/pkg/start"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/klog/v2"
 
@@ -28,12 +25,15 @@ const (
 )
 
 type CloudProvider struct {
+	localCoreFactory *ctlcore.Factory
+	lbFactory        *ctllb.Factory
+	kubevirtFactory  *ctlkubevirt.Factory
+
 	loadBalancers cloudprovider.LoadBalancer
 	instances     cloudprovider.InstancesV2
 
-	Context      context.Context
-	Namespace    string
-	ClientConfig *rest.Config
+	Context   context.Context
+	Namespace string
 }
 
 func init() {
@@ -41,7 +41,7 @@ func init() {
 }
 
 func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
-	bytes, err := ioutil.ReadAll(reader)
+	bytes, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, err
 	}
@@ -65,50 +65,44 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 	if err != nil {
 		return nil, err
 	}
+	kubevirtFactory := ctlkubevirt.NewFactoryFromConfigWithOptionsOrDie(clientConfig, &ctlkubevirt.FactoryOptions{
+		Namespace: namespace,
+	})
 
-	loadBalancerManager, err := newLoadBalancerManager(clientConfig, localCfg, namespace)
-	if err != nil {
-		return nil, fmt.Errorf("create load balancer manager faield, err: %w", err)
+	cp := &CloudProvider{
+		localCoreFactory: ctlcore.NewFactoryFromConfigOrDie(localCfg),
+		lbFactory:        ctllb.NewFactoryFromConfigOrDie(clientConfig),
+		kubevirtFactory:  kubevirtFactory,
+
+		Context: signals.SetupSignalContext(),
+	}
+	cp.loadBalancers = &LoadBalancerManager{
+		lbClient:       cp.lbFactory.Loadbalancer().V1beta1().LoadBalancer(),
+		localSvcClient: cp.localCoreFactory.Core().V1().Service(),
+		localSvcCache:  cp.localCoreFactory.Core().V1().Service().Cache(),
+		namespace:      namespace,
+	}
+	cp.instances = &instanceManager{
+		vmClient:  cp.kubevirtFactory.Kubevirt().V1().VirtualMachine(),
+		vmiClient: cp.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
+		namespace: namespace,
 	}
 
-	instanceManager, err := newInstanceManager(clientConfig, namespace)
-	if err != nil {
-		return nil, fmt.Errorf("create instance manager failed, error: %w", err)
-	}
-
-	return &CloudProvider{
-		loadBalancers: loadBalancerManager,
-		instances:     instanceManager,
-
-		Context:      signals.SetupSignalContext(),
-		Namespace:    namespace,
-		ClientConfig: clientConfig,
-	}, nil
+	return cp, nil
 }
 
 func (c *CloudProvider) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, stop <-chan struct{}) {
 	client := clientBuilder.ClientOrDie(ProviderName)
-	config := clientBuilder.ConfigOrDie(ProviderName)
-
-	coreFactory, err := ctlcore.NewFactoryFromConfig(config)
-	if err != nil {
-		klog.Fatalf("error building core factory: %s", err.Error())
-	}
-
-	virts, err := ctlkubevirt.NewFactoryFromConfigWithNamespace(c.ClientConfig, c.Namespace)
-	if err != nil {
-		klog.Fatalf("error building virt controllers: %s", err.Error())
-	}
 
 	vmi.Register(
 		c.Context,
 		client,
-		coreFactory.Core().V1().Node(),
-		virts.Kubevirt().V1().VirtualMachineInstance(),
+		c.localCoreFactory.Core().V1().Node(),
+		c.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
 	)
 
 	go func() {
-		if err := start.All(c.Context, threadiness, virts, coreFactory); err != nil {
+		if err := start.All(c.Context, threadiness, c.kubevirtFactory, c.localCoreFactory); err != nil {
 			klog.Fatalf("error starting controllers: %s", err.Error())
 		}
 		<-stop
