@@ -4,55 +4,41 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
+	"strings"
 	"time"
 
 	lbv1 "github.com/harvester/harvester-load-balancer/pkg/apis/loadbalancer.harvesterhci.io/v1beta1"
 	pkgctllb "github.com/harvester/harvester-load-balancer/pkg/controller/loadbalancer"
-	ctllb "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io"
 	ctllbv1 "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io/v1beta1"
-	ctlcore "github.com/rancher/wrangler/pkg/generated/controllers/core"
 	wranglecorev1 "github.com/rancher/wrangler/pkg/generated/controllers/core/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
-	"k8s.io/client-go/rest"
-	cloudprovider "k8s.io/cloud-provider"
 )
 
 const (
-	defaultWaitIPTimeout = time.Second * 5
-	serviceNamespaceKey  = prefix + "serviceNamespace"
-	serviceNameKey       = prefix + "serviceName"
-	clusterNameKey       = prefix + "cluster"
+	retryTimes    = 10
+	retryInterval = time.Second
+
+	serviceNamespaceKey = prefix + "serviceNamespace"
+	serviceNameKey      = prefix + "serviceName"
+	clusterNameKey      = prefix + "cluster"
 
 	maxNameLength = 63
 	lenOfSuffix   = 8
 )
 
+// Primary service is the load balancer service which will be used to create the load balancer.
+// Secondary service is the load balancer service which will share the load balancer created by the primary service. It has the annotation "cloudprovider.harvesterhci.io/primary-service" to specify the primary service.
+
 type LoadBalancerManager struct {
 	lbClient       ctllbv1.LoadBalancerClient
 	localSvcClient wranglecorev1.ServiceClient
+	localSvcCache  wranglecorev1.ServiceCache
 	namespace      string
-}
-
-func newLoadBalancerManager(cfg, localCfg *rest.Config, namespace string) (cloudprovider.LoadBalancer, error) {
-	lbFactory, err := ctllb.NewFactoryFromConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	coreFactory, err := ctlcore.NewFactoryFromConfig(localCfg)
-	if err != nil {
-		return nil, err
-	}
-
-	return &LoadBalancerManager{
-		lbClient:       lbFactory.Loadbalancer().V1beta1().LoadBalancer(),
-		localSvcClient: coreFactory.Core().V1().Service(),
-		namespace:      namespace,
-	}, nil
 }
 
 func (l *LoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName string, service *v1.Service) (status *v1.LoadBalancerStatus, exists bool, err error) {
@@ -65,33 +51,34 @@ func (l *LoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName s
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, false, nil
-		} else {
-			return nil, false, err
 		}
+		return nil, false, err
 	}
 
-	return &v1.LoadBalancerStatus{
-		Ingress: []v1.LoadBalancerIngress{
-			{
-				IP: lb.Status.Address,
-			},
-		},
-	}, true, nil
+	if lb.Status.Address == "" {
+		return nil, false, nil
+	}
+
+	return &service.Status.LoadBalancer, true, nil
 }
 
 func (l *LoadBalancerManager) GetLoadBalancerName(ctx context.Context, clusterName string, service *v1.Service) string {
-	return loadBalancerName(clusterName, service.Namespace, service.Name, string(service.UID))
+	svc, err := l.getPrimaryService(service)
+	if err != nil || svc == nil {
+		svc = service
+	}
+	return loadBalancerName(clusterName, svc.Namespace, svc.Name, string(svc.UID))
 }
 
 // The name must be a valid [RFC 1035 label name](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names).
 // If cluster name doesn't start with an alphabetic character, add "a" as prefix to make the name as compliant as possible with the RFC1035 standard.
 // If the name doesn't meet the standard, the CURD actions with the name will fail and return an error.
-func loadBalancerName(clusterName, serviceNamespace, serviceName, serviceUid string) string {
+func loadBalancerName(clusterName, serviceNamespace, serviceName, serviceUID string) string {
 	if len(validation.IsDNS1035Label(clusterName)) > 0 {
 		clusterName = "a" + clusterName
 	}
 	base := clusterName + "-" + serviceNamespace + "-" + serviceName + "-"
-	digest := crc32.ChecksumIEEE([]byte(base + serviceUid))
+	digest := crc32.ChecksumIEEE([]byte(base + serviceUID))
 	suffix := fmt.Sprintf("%08x", digest) // print in 8 width and pad with 0's
 
 	// The name contains no more than 63 characters.
@@ -102,53 +89,106 @@ func loadBalancerName(clusterName, serviceNamespace, serviceName, serviceUid str
 	return base + suffix
 }
 
+// if annotation "cloudprovider.harvesterhci.io/primary-service" is set, return the service that the annotation points to.
+// if it's an invalid service, return error.
+// if it's not a secondary service, return nil.
+func (l *LoadBalancerManager) getPrimaryService(service *v1.Service) (*v1.Service, error) {
+	primary, ok := service.Annotations[KeyPrimaryService]
+	if !ok {
+		return nil, nil
+	}
+
+	f := strings.SplitN(primary, "/", 2)
+	if len(f) != 2 {
+		return nil, fmt.Errorf("invalid service name %s", primary)
+	}
+
+	primarySvc, err := l.localSvcCache.Get(f[0], f[1])
+	if err != nil {
+		return nil, fmt.Errorf("get service %s failed: %w", primary, err)
+	}
+
+	if primarySvc.Annotations[KeyPrimaryService] != "" {
+		return nil, fmt.Errorf("service %s is not a primary service", primary)
+	}
+
+	return primarySvc, nil
+}
+
 // EnsureLoadBalancer is to create/update a Harvester load balancer for the service
+func (l *LoadBalancerManager) EnsureLoadBalancer(ctx context.Context, clusterName string, service *v1.Service, nodes []*v1.Node) (*v1.LoadBalancerStatus, error) {
+	primarySvc, err := l.getPrimaryService(service)
+	if err != nil {
+		return nil, err
+	}
+	if primarySvc != nil {
+		return l.ensureSecondaryLoadBalancer(clusterName, primarySvc, service)
+	}
+
+	return l.ensurePrimaryLoadBalancer(clusterName, service)
+}
+
+// ensurePrimaryLoadBalancer is to create/update a Harvester load balancer for the primary service
 //  1. Create/update harvester load balancer.
 //     If the service has an external IP set by kube-vip, update it into the load balancer.
 //  2. Wait for the harvester load balancer to get the allocated IP address
 //  3. Set the allocated IP address into the field spec.loadBalancerIP of the service.
 //     The kube-vip will set the external IP according to the spec.loadBalancerIP.
-func (l *LoadBalancerManager) EnsureLoadBalancer(ctx context.Context, clusterName string, service *v1.Service, nodes []*v1.Node) (*v1.LoadBalancerStatus, error) {
-	name := l.GetLoadBalancerName(ctx, clusterName, service)
+func (l *LoadBalancerManager) ensurePrimaryLoadBalancer(clusterName string, service *v1.Service) (*v1.LoadBalancerStatus, error) {
+	name := loadBalancerName(clusterName, service.Namespace, service.Name, string(service.UID))
 
 	if err := l.createOrUpdateLoadBalancer(name, clusterName, service); err != nil {
 		return nil, fmt.Errorf("create or update lb %s/%s failed, error: %w", l.namespace, name, err)
 	}
 
-	if err := l.updateServiceLoadBalancerIP(name, service); err != nil {
+	if err := l.updatePrimaryServiceLoadBalancerIP(name, service); err != nil {
+		// Delete the load balancer if the service is not updated successfully.
+		// If ensure service failed, the load balancer could not be deleted even though the service is deleted.
+		if err := l.deleteLoadBalancer(clusterName, service); err != nil {
+			return nil, fmt.Errorf("delete lb %s/%s failed, error: %w", l.namespace, name, err)
+		}
 		return nil, fmt.Errorf("update load balancer IP of service %s/%s failed, error: %w", service.Namespace, service.Name, err)
 	}
 
 	return &service.Status.LoadBalancer, nil
 }
 
+// ensureSecondaryLoadBalancer is to create/update a Harvester load balancer for the secondary service
+func (l *LoadBalancerManager) ensureSecondaryLoadBalancer(clusterName string, primary, secondary *v1.Service) (*v1.LoadBalancerStatus, error) {
+	if len(primary.Status.LoadBalancer.Ingress) == 0 {
+		return nil, fmt.Errorf("primary service %s/%s has no ingress IP", primary.Namespace, primary.Name)
+	}
+	// check if the port of the secondary service overlaps with the primary service and other secondary services
+	if err := l.checkPortOverlap(primary, secondary); err != nil {
+		return nil, fmt.Errorf("check port overlap failed, primary service: %s/%s, secondary service: %s/%s, error: %w",
+			primary.Namespace, primary.Name, secondary.Namespace, secondary.Name, err)
+	}
+	// delete the original load balancer if existing
+	if err := l.deleteLoadBalancer(clusterName, secondary); err != nil {
+		return nil, err
+	}
+	// update secondary service load balancer IP
+	return &secondary.Status.LoadBalancer, l.updateSecondaryServiceLoadBalancerIP(primary.Status.LoadBalancer.Ingress[0].IP, primary, secondary)
+}
+
 func (l *LoadBalancerManager) UpdateLoadBalancer(ctx context.Context, clusterName string, service *v1.Service, nodes []*v1.Node) error {
-	name := l.GetLoadBalancerName(ctx, clusterName, service)
-	lb, err := l.lbClient.Get(l.namespace, name, metav1.GetOptions{})
-	if err != nil {
-		return err
+	if _, err := l.EnsureLoadBalancer(ctx, clusterName, service, nodes); err != nil {
+		return fmt.Errorf("update load balancer failed, error: %w", err)
 	}
-
-	newLB := l.constructLB(lb, service, name, clusterName)
-	_, err = l.lbClient.Update(newLB)
-	if err != nil {
-		return fmt.Errorf("update lb %s/%s failed, error: %w", l.namespace, name, err)
-	}
-
 	return nil
 }
 
 func (l *LoadBalancerManager) EnsureLoadBalancerDeleted(ctx context.Context, clusterName string, service *v1.Service) error {
-	name := l.GetLoadBalancerName(ctx, clusterName, service)
-	_, err := l.lbClient.Get(l.namespace, name, metav1.GetOptions{})
-	if err != nil && !errors.IsNotFound(err) {
+	primarySvc, err := l.getPrimaryService(service)
+	if err != nil {
 		return err
 	}
-	if err == nil {
-		return l.lbClient.Delete(l.namespace, name, &metav1.DeleteOptions{})
+	// do nothing for the secondary service
+	if primarySvc != nil {
+		return nil
 	}
 
-	return nil
+	return l.deleteLoadBalancer(clusterName, service)
 }
 
 func (l *LoadBalancerManager) createOrUpdateLoadBalancer(name, clusterName string, service *v1.Service) error {
@@ -214,7 +254,7 @@ func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.
 	return lb
 }
 
-func (l *LoadBalancerManager) updateServiceLoadBalancerIP(lbName string, service *v1.Service) error {
+func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, service *v1.Service) error {
 	object, ip, err := waitForIP(func() (runtime.Object, string, error) {
 		lb, err := l.lbClient.Get(l.namespace, lbName, metav1.GetOptions{})
 		if err != nil || lb.Status.AllocatedAddress.IP == "" {
@@ -227,11 +267,19 @@ func (l *LoadBalancerManager) updateServiceLoadBalancerIP(lbName string, service
 	}
 
 	lb := object.(*lbv1.LoadBalancer)
-	if service.Spec.LoadBalancerIP == ip && lb.Status.Address == ip {
+	if service.Annotations != nil && service.Annotations[KeyKubevipLoadBalancerIP] == ip && lb.Status.Address == ip &&
+		service.Labels != nil && service.Labels[KeyPrimaryService] == "" {
 		return nil
 	}
+
 	serviceCopy := service.DeepCopy()
-	serviceCopy.Spec.LoadBalancerIP = ip
+	if serviceCopy.Labels != nil && serviceCopy.Labels[KeyPrimaryService] != "" {
+		serviceCopy.Labels[KeyPrimaryService] = ""
+	}
+	if serviceCopy.Annotations == nil {
+		serviceCopy.Annotations = make(map[string]string)
+	}
+	serviceCopy.Annotations[KeyKubevipLoadBalancerIP] = ip
 	if _, err := l.localSvcClient.Update(serviceCopy); err != nil {
 		return err
 	}
@@ -239,21 +287,115 @@ func (l *LoadBalancerManager) updateServiceLoadBalancerIP(lbName string, service
 	return nil
 }
 
-func waitForIP(callback func() (runtime.Object, string, error)) (runtime.Object, string, error) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	tick := ticker.C
+func (l *LoadBalancerManager) updateSecondaryServiceLoadBalancerIP(ip string, primary, secondary *v1.Service) error {
+	labelValue := primaryServiceLabelValue(primary)
+	if secondary.Annotations != nil && secondary.Annotations[KeyKubevipLoadBalancerIP] == ip &&
+		secondary.Annotations[KeyIPAM] == "" && secondary.Labels != nil && secondary.Labels[KeyPrimaryService] == labelValue {
+		return nil
+	}
 
-	for {
-		select {
-		case <-time.After(defaultWaitIPTimeout):
-			return nil, "", fmt.Errorf("wait IP timeout")
-		case <-tick:
-			object, ip, err := callback()
-			if err != nil {
-				continue
-			}
+	secondaryCopy := secondary.DeepCopy()
+	if secondaryCopy.Labels == nil {
+		secondaryCopy.Labels = make(map[string]string)
+	}
+	if secondaryCopy.Annotations == nil {
+		secondaryCopy.Annotations = make(map[string]string)
+	}
+	// add a label for easy filtering
+	secondaryCopy.Labels[KeyPrimaryService] = labelValue
+	// update the annotations and kube-vip will update the service status load balancer
+	secondaryCopy.Annotations[KeyKubevipLoadBalancerIP] = ip
+	delete(secondaryCopy.Annotations, KeyIPAM)
+	if _, err := l.localSvcClient.Update(secondaryCopy); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (l *LoadBalancerManager) deleteLoadBalancer(clusterName string, service *v1.Service) error {
+	// check if there are other services using the same load balancer
+	if err := l.checkSecondaryServicesBeforeDeleted(service); err != nil {
+		return fmt.Errorf("could not delete load balancer for service %s/%s: %w", service.Namespace, service.Name, err)
+	}
+
+	name := loadBalancerName(clusterName, service.Namespace, service.Name, string(service.UID))
+	_, err := l.lbClient.Get(l.namespace, name, metav1.GetOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+	if err == nil {
+		return l.lbClient.Delete(l.namespace, name, &metav1.DeleteOptions{})
+	}
+
+	return nil
+}
+
+func waitForIP(callback func() (runtime.Object, string, error)) (runtime.Object, string, error) {
+	for i := 0; i < retryTimes; i++ {
+		object, ip, err := callback()
+		if err == nil {
 			return object, ip, nil
 		}
+		time.Sleep(retryInterval)
 	}
+
+	return nil, "", fmt.Errorf("timeout waiting for IP address")
+}
+
+func (l *LoadBalancerManager) checkPortOverlap(primary, secondary *v1.Service) error {
+	portMap := make(map[int32]bool)
+	for _, port := range secondary.Spec.Ports {
+		portMap[port.Port] = true
+	}
+	// TODO: Listing services filtered by primary service label could cause concurrency problem because the primary service
+	// label is added after this function is called. Some eligible services may not be listed.
+	svcs, err := l.localSvcCache.List(metav1.NamespaceAll, labels.Set(map[string]string{
+		KeyPrimaryService: primaryServiceLabelValue(primary),
+	}).AsSelector())
+	if err != nil {
+		return fmt.Errorf("list service failed: %w", err)
+	}
+	svcs = append(svcs, primary)
+
+	for _, svc := range svcs {
+		// ignore itself
+		if svc.UID == secondary.UID {
+			continue
+		}
+		for _, port := range svc.Spec.Ports {
+			if portMap[port.Port] {
+				return fmt.Errorf("port %d has been used in service %s/%s", port.Port, svc.Namespace, svc.Name)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (l *LoadBalancerManager) checkSecondaryServicesBeforeDeleted(primary *v1.Service) error {
+	name := primary.Namespace + "/" + primary.Name
+
+	// Listing services filtered by primary service label could cause concurrency problem because there may be secondary
+	// services added after this function is called and before the service is deleted.
+	svcs, err := l.localSvcCache.List(metav1.NamespaceAll, labels.Set(map[string]string{
+		KeyPrimaryService: primaryServiceLabelValue(primary),
+	}).AsSelector())
+	if err != nil {
+		return err
+	}
+
+	if len(svcs) > 0 {
+		svcNames := make([]string, 0, len(svcs))
+		for _, svc := range svcs {
+			svcNames = append(svcNames, svc.Namespace+"/"+svc.Name)
+		}
+		return fmt.Errorf("service %s is still used by other services %v", name, svcNames)
+	}
+
+	return nil
+}
+
+func primaryServiceLabelValue(svc *v1.Service) string {
+	return svc.Namespace + "." + svc.Name
 }

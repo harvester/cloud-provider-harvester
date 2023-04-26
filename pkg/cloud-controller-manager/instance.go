@@ -4,12 +4,10 @@ import (
 	"context"
 	"net"
 
-	ctlkubevirt "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io"
 	ctlkubevirtv1 "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/rest"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider/api"
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -19,20 +17,6 @@ type instanceManager struct {
 	vmClient  ctlkubevirtv1.VirtualMachineClient
 	vmiClient ctlkubevirtv1.VirtualMachineInstanceClient
 	namespace string
-}
-
-// newInstanceManager Instance is equivalent to VirtualMachine in harvester, not VirtualMachineInstance
-func newInstanceManager(cfg *rest.Config, namespace string) (cloudprovider.InstancesV2, error) {
-	kubevirtFactory, err := ctlkubevirt.NewFactoryFromConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	return &instanceManager{
-		vmClient:  kubevirtFactory.Kubevirt().V1().VirtualMachine(),
-		vmiClient: kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
-		namespace: namespace,
-	}, nil
 }
 
 func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bool, error) {
