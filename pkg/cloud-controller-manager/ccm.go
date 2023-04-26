@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 
-	ctlvirt "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io"
-	ctlnode "github.com/rancher/wrangler/pkg/generated/controllers/core"
+	ctlkubevirt "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io"
+	ctlcore "github.com/rancher/wrangler/pkg/generated/controllers/core"
+	"github.com/rancher/wrangler/pkg/kubeconfig"
 	"github.com/rancher/wrangler/pkg/signals"
 	"github.com/rancher/wrangler/pkg/start"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/klog/v2"
 
@@ -58,7 +61,12 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 
 	namespace := rawConfig.Contexts[rawConfig.CurrentContext].Namespace
 
-	loadBalancerManager, err := newLoadBalancerManager(clientConfig, namespace)
+	localCfg, err := kubeconfig.GetNonInteractiveClientConfig(os.Getenv("KUBECONFIG")).ClientConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	loadBalancerManager, err := newLoadBalancerManager(clientConfig, localCfg, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("create load balancer manager faield, err: %w", err)
 	}
@@ -82,12 +90,12 @@ func (c *CloudProvider) Initialize(clientBuilder cloudprovider.ControllerClientB
 	client := clientBuilder.ClientOrDie(ProviderName)
 	config := clientBuilder.ConfigOrDie(ProviderName)
 
-	coreFactory, err := ctlnode.NewFactoryFromConfig(config)
+	coreFactory, err := ctlcore.NewFactoryFromConfig(config)
 	if err != nil {
 		klog.Fatalf("error building core factory: %s", err.Error())
 	}
 
-	virts, err := ctlvirt.NewFactoryFromConfigWithNamespace(c.ClientConfig, c.Namespace)
+	virts, err := ctlkubevirt.NewFactoryFromConfigWithNamespace(c.ClientConfig, c.Namespace)
 	if err != nil {
 		klog.Fatalf("error building virt controllers: %s", err.Error())
 	}
