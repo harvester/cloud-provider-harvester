@@ -4,25 +4,27 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
-	"strconv"
 	"time"
 
-	lbv1 "github.com/harvester/harvester-load-balancer/pkg/apis/loadbalancer.harvesterhci.io/v1alpha1"
+	lbv1 "github.com/harvester/harvester-load-balancer/pkg/apis/loadbalancer.harvesterhci.io/v1beta1"
+	pkgctllb "github.com/harvester/harvester-load-balancer/pkg/controller/loadbalancer"
 	ctllb "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io"
-	ctllbv1 "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io/v1alpha1"
+	ctllbv1 "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io/v1beta1"
+	ctlcore "github.com/rancher/wrangler/pkg/generated/controllers/core"
+	wranglecorev1 "github.com/rancher/wrangler/pkg/generated/controllers/core/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
-	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/rest"
 	cloudprovider "k8s.io/cloud-provider"
-	"k8s.io/klog/v2"
 )
 
 const (
 	defaultWaitIPTimeout = time.Second * 5
-	uuidKey              = prefix + "service-uuid"
+	serviceNamespaceKey  = prefix + "serviceNamespace"
+	serviceNameKey       = prefix + "serviceName"
 	clusterNameKey       = prefix + "cluster"
 
 	maxNameLength = 63
@@ -30,24 +32,35 @@ const (
 )
 
 type LoadBalancerManager struct {
-	lbClient  ctllbv1.LoadBalancerClient
-	namespace string
+	lbClient       ctllbv1.LoadBalancerClient
+	localSvcClient wranglecorev1.ServiceClient
+	namespace      string
 }
 
-func newLoadBalancerManager(cfg *rest.Config, namespace string) (cloudprovider.LoadBalancer, error) {
+func newLoadBalancerManager(cfg, localCfg *rest.Config, namespace string) (cloudprovider.LoadBalancer, error) {
 	lbFactory, err := ctllb.NewFactoryFromConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
 
+	coreFactory, err := ctlcore.NewFactoryFromConfig(localCfg)
+	if err != nil {
+		return nil, err
+	}
+
 	return &LoadBalancerManager{
-		lbClient:  lbFactory.Loadbalancer().V1alpha1().LoadBalancer(),
-		namespace: namespace,
+		lbClient:       lbFactory.Loadbalancer().V1beta1().LoadBalancer(),
+		localSvcClient: coreFactory.Core().V1().Service(),
+		namespace:      namespace,
 	}, nil
 }
 
 func (l *LoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName string, service *v1.Service) (status *v1.LoadBalancerStatus, exists bool, err error) {
 	name := l.GetLoadBalancerName(ctx, clusterName, service)
+	// If using loadbalancer cache here, the cloud provider will need a serviceAccount binding with a clusterrole which
+	// includes the privilege to list and watch the load balancers in all namespaces, whereas the client only needs to
+	// be allowed to get the load balancer in the specified namespace. Following the principle of least privilege, we
+	// choose the client instead of the cache to get the load balancer.
 	lb, err := l.lbClient.Get(l.namespace, name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -89,67 +102,24 @@ func loadBalancerName(clusterName, serviceNamespace, serviceName, serviceUid str
 	return base + suffix
 }
 
-// EnsureLoadBalancer is to create/update a Harvester load balancer for the service and return the loadBalancerStatus with an IP
-// 1. watch the LB to get an IP asynchronously
-// 2. create or update lb
-// 3. wait for an ip and return the LoadBalancerStatus
+// EnsureLoadBalancer is to create/update a Harvester load balancer for the service
+//  1. Create/update harvester load balancer.
+//     If the service has an external IP set by kube-vip, update it into the load balancer.
+//  2. Wait for the harvester load balancer to get the allocated IP address
+//  3. Set the allocated IP address into the field spec.loadBalancerIP of the service.
+//     The kube-vip will set the external IP according to the spec.loadBalancerIP.
 func (l *LoadBalancerManager) EnsureLoadBalancer(ctx context.Context, clusterName string, service *v1.Service, nodes []*v1.Node) (*v1.LoadBalancerStatus, error) {
 	name := l.GetLoadBalancerName(ctx, clusterName, service)
-	ipChan := make(chan string)
 
-	lb, getErr := l.lbClient.Get(l.namespace, name, metav1.GetOptions{})
-	if getErr != nil && !errors.IsNotFound(getErr) {
-		return nil, getErr
+	if err := l.createOrUpdateLoadBalancer(name, clusterName, service); err != nil {
+		return nil, fmt.Errorf("create or update lb %s/%s failed, error: %w", l.namespace, name, err)
 	}
 
-	// watch the lb to get an ip
-	w, err := l.lbClient.Watch(l.namespace, metav1.ListOptions{FieldSelector: fmt.Sprintf("metadata.name=%s", name)})
-	if err != nil {
-		return nil, fmt.Errorf("watch loadbalancer in namespace %s error, %w", l.namespace, err)
-	}
-	defer w.Stop()
-	go getIP(w, ipChan, lb)
-
-	// create or update lb
-	if getErr == nil {
-		if err := l.updateLoadBalancer(lb, service, nodes); err != nil {
-			return nil, err
-		}
-	} else {
-		spec, err := getLBSpec(service, nodes)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := l.lbClient.Create(&lbv1.LoadBalancer{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: l.namespace,
-				Name:      name,
-				Annotations: map[string]string{
-					uuidKey: string(service.UID),
-				},
-				Labels: map[string]string{
-					clusterNameKey: clusterName,
-				},
-			},
-			Spec: *spec,
-		}); err != nil {
-			return nil, err
-		}
+	if err := l.updateServiceLoadBalancerIP(name, service); err != nil {
+		return nil, fmt.Errorf("update load balancer IP of service %s/%s failed, error: %w", service.Namespace, service.Name, err)
 	}
 
-	// wait Kube-vip to allocate an ip
-	select {
-	case <-time.After(defaultWaitIPTimeout):
-		return nil, fmt.Errorf("wait ip timeout")
-	case ip := <-ipChan:
-		return &v1.LoadBalancerStatus{
-			Ingress: []v1.LoadBalancerIngress{
-				{
-					IP: ip,
-				},
-			},
-		}, nil
-	}
+	return &service.Status.LoadBalancer, nil
 }
 
 func (l *LoadBalancerManager) UpdateLoadBalancer(ctx context.Context, clusterName string, service *v1.Service, nodes []*v1.Node) error {
@@ -159,19 +129,10 @@ func (l *LoadBalancerManager) UpdateLoadBalancer(ctx context.Context, clusterNam
 		return err
 	}
 
-	return l.updateLoadBalancer(lb, service, nodes)
-}
-
-func (l *LoadBalancerManager) updateLoadBalancer(lb *lbv1.LoadBalancer, service *v1.Service, nodes []*v1.Node) error {
-	lbCopy := lb.DeepCopy()
-	spec, err := getLBSpec(service, nodes)
+	newLB := l.constructLB(lb, service, name, clusterName)
+	_, err = l.lbClient.Update(newLB)
 	if err != nil {
-		return err
-	}
-	lbCopy.Spec = *spec
-
-	if _, err := l.lbClient.Update(lbCopy); err != nil {
-		return err
+		return fmt.Errorf("update lb %s/%s failed, error: %w", l.namespace, name, err)
 	}
 
 	return nil
@@ -190,158 +151,109 @@ func (l *LoadBalancerManager) EnsureLoadBalancerDeleted(ctx context.Context, clu
 	return nil
 }
 
-// getIP by watching the loadbalancers
-func getIP(w watch.Interface, ipChan chan string, lbBeforeEnsure *lbv1.LoadBalancer) {
-	// if the lb has a ip before ensuring, return it directly
-	if lbBeforeEnsure.Status.Address != "" {
-		ipChan <- lbBeforeEnsure.Status.Address
-		return
+func (l *LoadBalancerManager) createOrUpdateLoadBalancer(name, clusterName string, service *v1.Service) error {
+	lb, err := l.lbClient.Get(l.namespace, name, metav1.GetOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return err
 	}
 
-	for event := range w.ResultChan() {
-		if event.Type != watch.Added && event.Type != watch.Modified {
-			continue
-		}
-		lb, ok := event.Object.(*lbv1.LoadBalancer)
-		if !ok {
-			klog.Errorf("type assert failed")
-			return
-		}
-
-		if lb.Status.Address != "" {
-			ipChan <- lb.Status.Address
-			return
-		}
+	newLB := l.constructLB(lb, service, name, clusterName)
+	if errors.IsNotFound(err) {
+		_, err = l.lbClient.Create(newLB)
+	} else {
+		_, err = l.lbClient.Update(newLB)
 	}
+
+	return err
 }
 
-func getLBSpec(service *v1.Service, nodes []*v1.Node) (*lbv1.LoadBalancerSpec, error) {
-	// ipam
+func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.Service, name, clusterName string) *lbv1.LoadBalancer {
+	var lb *lbv1.LoadBalancer
+
+	// If the error returned by Get Interface is ErrNotFound, the returned lb would not be nil, but the name of the lb is empty.
+	if oldLB == nil || oldLB.Name == "" {
+		lb = &lbv1.LoadBalancer{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: lbv1.SchemeGroupVersion.String(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: l.namespace,
+				Name:      name,
+			},
+		}
+	} else {
+		lb = oldLB.DeepCopy()
+	}
+
+	if lb.Annotations == nil {
+		lb.Annotations = make(map[string]string)
+	}
+	lb.Annotations[pkgctllb.AnnotationKeyNetwork] = service.Annotations[KeyNetwork]
+	lb.Annotations[pkgctllb.AnnotationKeyProject] = service.Annotations[KeyProject]
+	lb.Annotations[pkgctllb.AnnotationKeyNamespace] = service.Annotations[KeyNamespace]
+	lb.Annotations[pkgctllb.AnnotationKeyCluster] = clusterName
+
+	if lb.Labels == nil {
+		lb.Labels = make(map[string]string)
+	}
+	lb.Labels[clusterNameKey] = clusterName
+	lb.Labels[serviceNamespaceKey] = service.Namespace
+	lb.Labels[serviceNameKey] = service.Name
+
 	ipam := lbv1.Pool
-	if ipamStr, ok := service.Annotations[loadBalancerIPAM]; ok {
+	if ipamStr, ok := service.Annotations[KeyIPAM]; ok {
 		ipam = lbv1.IPAM(ipamStr)
 	}
+	lb.Spec.IPAM = ipam
+	lb.Spec.WorkloadType = lbv1.Cluster
 
-	// listeners
-	listeners := []*lbv1.Listener{}
-	for _, port := range service.Spec.Ports {
-		listeners = append(listeners, &lbv1.Listener{
-			Name:        port.Name,
-			Port:        port.Port,
-			Protocol:    port.Protocol,
-			BackendPort: port.NodePort,
-		})
+	if len(service.Status.LoadBalancer.Ingress) > 0 {
+		lb.Status.Address = service.Status.LoadBalancer.Ingress[0].IP
 	}
 
-	// backendServers
-	backendServers := []string{}
-	for _, node := range nodes {
-		for _, address := range node.Status.Addresses {
-			if address.Type == v1.NodeInternalIP {
-				backendServers = append(backendServers, address.Address)
+	return lb
+}
+
+func (l *LoadBalancerManager) updateServiceLoadBalancerIP(lbName string, service *v1.Service) error {
+	object, ip, err := waitForIP(func() (runtime.Object, string, error) {
+		lb, err := l.lbClient.Get(l.namespace, lbName, metav1.GetOptions{})
+		if err != nil || lb.Status.AllocatedAddress.IP == "" {
+			return nil, "", fmt.Errorf("could not get allocated IP address")
+		}
+		return lb, lb.Status.AllocatedAddress.IP, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	lb := object.(*lbv1.LoadBalancer)
+	if service.Spec.LoadBalancerIP == ip && lb.Status.Address == ip {
+		return nil
+	}
+	serviceCopy := service.DeepCopy()
+	serviceCopy.Spec.LoadBalancerIP = ip
+	if _, err := l.localSvcClient.Update(serviceCopy); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func waitForIP(callback func() (runtime.Object, string, error)) (runtime.Object, string, error) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	tick := ticker.C
+
+	for {
+		select {
+		case <-time.After(defaultWaitIPTimeout):
+			return nil, "", fmt.Errorf("wait IP timeout")
+		case <-tick:
+			object, ip, err := callback()
+			if err != nil {
+				continue
 			}
+			return object, ip, nil
 		}
 	}
-
-	// healthCheck
-	healthCheck, err := extractHealthCheck(service)
-	if err != nil {
-		return nil, fmt.Errorf("extract health check failed, error: %w", err)
-	}
-
-	return &lbv1.LoadBalancerSpec{
-		Description:    service.Annotations[loadBalancerDescription],
-		IPAM:           ipam,
-		Listeners:      listeners,
-		BackendServers: backendServers,
-		HeathCheck:     healthCheck,
-	}, nil
-}
-
-func extractHealthCheck(svc *v1.Service) (*lbv1.HeathCheck, error) {
-	healthCheck := &lbv1.HeathCheck{}
-	var err error
-
-	// port
-	port, err := getNodePort(svc)
-	if err != nil {
-		return nil, fmt.Errorf("get healthy check port failed, error: %w", err)
-	}
-	if port != nil {
-		healthCheck.Port = *port
-	} else {
-		return nil, nil
-	}
-
-	// successThreshold
-	if healthCheck.SuccessThreshold, err = getAnnotationValue(svc.Annotations, healthCheckSuccessThreshold); err != nil {
-		return nil, fmt.Errorf("get annotationsValue failed, key: %s, err: %w", healthCheckSuccessThreshold, err)
-	}
-
-	// failThreshold
-	if healthCheck.FailureThreshold, err = getAnnotationValue(svc.Annotations, healthCheckFailureThreshold); err != nil {
-		return nil, fmt.Errorf("get annotationsValue failed, key: %s, err: %w", healthCheckFailureThreshold, err)
-	}
-
-	// periodSeconds
-	if healthCheck.PeriodSeconds, err = getAnnotationValue(svc.Annotations, healthCheckPeriodSeconds); err != nil {
-		return nil, fmt.Errorf("get annotationsValue failed, key: %s, err: %w", healthCheckPeriodSeconds, err)
-	}
-
-	// timeout
-	if healthCheck.TimeoutSeconds, err = getAnnotationValue(svc.Annotations, healthCheckTimeoutSeconds); err != nil {
-		return nil, fmt.Errorf("get annotationsValue failed, key: %s, err: %w", healthCheckTimeoutSeconds, err)
-	}
-
-	return healthCheck, nil
-}
-
-func getNodePort(svc *v1.Service) (*int, error) {
-	portStr, ok := svc.Annotations[healthCheckPort]
-	if !ok {
-		return nil, nil
-	}
-
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		return nil, fmt.Errorf("atoi error, port: %s, error: %w", portStr, err)
-	}
-
-	var nodePort int
-	for _, p := range svc.Spec.Ports {
-		if p.Port == int32(port) {
-			nodePort = int(p.NodePort)
-		}
-	}
-	if nodePort == 0 {
-		return nil, fmt.Errorf("nodeport not found, service port: %d", port)
-	}
-
-	return &nodePort, nil
-}
-
-func getAnnotationValue(annotations map[string]string, key string) (int, error) {
-	valueStr, ok := annotations[key]
-	if !ok {
-		return defaultValue(key), nil
-	}
-
-	return strconv.Atoi(valueStr)
-}
-
-func defaultValue(key string) int {
-	var value int
-
-	switch key {
-	case healthCheckSuccessThreshold:
-		value = defaultSuccessThreshold
-	case healthCheckFailureThreshold:
-		value = defaultFailThreshold
-	case healthCheckPeriodSeconds:
-		value = defaultPeriodSeconds
-	case healthCheckTimeoutSeconds:
-		value = defaultTimeoutSeconds
-	}
-
-	return value
 }
