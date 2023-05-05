@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/cloud-provider"
+	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider/app"
 	cloudcontrollerconfig "k8s.io/cloud-provider/app/config"
 	"k8s.io/cloud-provider/options"
