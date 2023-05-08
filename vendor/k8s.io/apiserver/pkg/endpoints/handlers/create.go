@@ -94,6 +94,7 @@ func createHandler(r rest.NamedCreater, scope *RequestScope, admit admission.Int
 		}
 
 		body, err := limitedReadBody(req, scope.MaxRequestBodyBytes)
+		trace.Step("limitedReadBody done", utiltrace.Field{"len", len(body)}, utiltrace.Field{"err", err})
 		if err != nil {
 			scope.err(err, w, req)
 			return
@@ -162,8 +163,15 @@ func createHandler(r rest.NamedCreater, scope *RequestScope, admit admission.Int
 
 		userInfo, _ := request.UserFrom(ctx)
 
-		// if this object supports namespace info
 		if objectMeta, err := meta.Accessor(obj); err == nil {
+			preserveObjectMetaSystemFields := false
+			if c, ok := r.(rest.SubresourceObjectMetaPreserver); ok && len(scope.Subresource) > 0 {
+				preserveObjectMetaSystemFields = c.PreserveRequestObjectMetaSystemFieldsOnSubresourceCreate()
+			}
+			if !preserveObjectMetaSystemFields {
+				rest.WipeObjectMetaSystemFields(objectMeta)
+			}
+
 			// ensure namespace on the object is correct, or error if a conflicting namespace was set in the object
 			if err := rest.EnsureObjectNamespaceMatchesRequestNamespace(rest.ExpectedNamespaceForResource(namespace, scope.Resource), objectMeta); err != nil {
 				scope.err(err, w, req)
@@ -211,11 +219,11 @@ func createHandler(r rest.NamedCreater, scope *RequestScope, admit admission.Int
 			}
 			return result, err
 		})
+		trace.Step("Write to database call finished", utiltrace.Field{"len", len(body)}, utiltrace.Field{"err", err})
 		if err != nil {
 			scope.err(err, w, req)
 			return
 		}
-		trace.Step("Object stored in database")
 
 		code := http.StatusCreated
 		status, ok := result.(*metav1.Status)
