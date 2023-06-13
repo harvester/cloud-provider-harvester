@@ -19,10 +19,11 @@ func Test_getLoadBalancerName(t *testing.T) {
 		args       args
 		wantPrefix string
 	}{
-		{"case_1", args{"bvis", "default", "abcd", defaultUID}, "bvis-default-abcd-"},
-		{"case_2", args{"1bvis", "default", "abcd", defaultUID}, "a1bvis-default-abcd-"},
-		{"case_3", args{"bvis", "central-rundeck", "kube-system-rke2-ingress-nginx-controller", defaultUID}, "bvis-central-rundeck-kube-system-rke2-ingress-nginx-con"},
-		{"case_4", args{"bvis", "central-rundeck", "kube-system-rke2-ingress-nginx-co-abcd", defaultUID}, "bvis-central-rundeck-kube-system-rke2-ingress-nginx-co-"},
+		{"case_1", args{"test", "default", "abcd", defaultUID}, "test-default-abcd-"},
+		{"case_2", args{"1test", "default", "abcd", defaultUID}, "a1test-default-abcd-"},
+		{"case_3", args{"test", "default-default", "kube-system-rke2-ingress-nginx-controller", defaultUID}, "test-default-default-kube-system-rke2-ingress-nginx-con"},
+		{"case_4", args{"test", "default-default", "kube-system-rke2-ingress-nginx-co-abcd", defaultUID}, "test-default-default-kube-system-rke2-ingress-nginx-co-"},
+		{"case_5", args{"1test", "default-default", "kube-system-rke2-ingress-nginx-controller", defaultUID}, "a1test-default-default-kube-system-rke2-ingress-nginx-c"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
