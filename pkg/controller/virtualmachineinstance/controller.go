@@ -10,6 +10,7 @@ import (
 	ctlcorev1 "github.com/rancher/wrangler/pkg/generated/controllers/core/v1"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 	cloudproviderapi "k8s.io/cloud-provider/api"
 	cloudnodeutil "k8s.io/cloud-provider/node/helpers"
@@ -88,7 +89,11 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 
 	node, err := h.nodeCache.Get(nodeName)
 	if err != nil {
-		return vmi, err
+		if !errors.IsNotFound(err) {
+			return vmi, err
+		}
+		// This vm does not belong to current cluster if the node is not found
+		return vmi, nil
 	}
 
 	if !compareTopology(vmi.GetAnnotations(), node.GetLabels()) {
