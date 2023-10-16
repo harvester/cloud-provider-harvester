@@ -1,6 +1,6 @@
 module github.com/harvester/harvester-cloud-provider
 
-go 1.19
+go 1.20
 
 replace (
 	cloud.google.com/go => cloud.google.com/go v0.110.0
