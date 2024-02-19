@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"sync"
 
 	ctllb "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io"
 	ctlkubevirt "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io"
@@ -14,6 +15,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/klog/v2"
+	"kubevirt.io/client-go/kubecli"
 
 	vmi "github.com/harvester/harvester-cloud-provider/pkg/controller/virtualmachineinstance"
 )
@@ -32,8 +34,13 @@ type CloudProvider struct {
 	loadBalancers cloudprovider.LoadBalancer
 	instances     cloudprovider.InstancesV2
 
-	Context   context.Context
-	Namespace string
+	kubevirtClient kubecli.KubevirtClient
+
+	nodeToVMName *sync.Map
+
+	Context context.Context
+
+	namespace string
 }
 
 func init() {
@@ -69,12 +76,24 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 		Namespace: namespace,
 	})
 
+	kubevirtClient, err := kubecli.GetKubevirtClientFromClientConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeToVMName := &sync.Map{}
 	cp := &CloudProvider{
 		localCoreFactory: ctlcore.NewFactoryFromConfigOrDie(localCfg),
 		lbFactory:        ctllb.NewFactoryFromConfigOrDie(clientConfig),
 		kubevirtFactory:  kubevirtFactory,
 
+		kubevirtClient: kubevirtClient,
+
+		nodeToVMName: nodeToVMName,
+
 		Context: signals.SetupSignalContext(),
+
+		namespace: namespace,
 	}
 	cp.loadBalancers = &LoadBalancerManager{
 		lbClient:       cp.lbFactory.Loadbalancer().V1beta1().LoadBalancer(),
@@ -83,9 +102,10 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 		namespace:      namespace,
 	}
 	cp.instances = &instanceManager{
-		vmClient:  cp.kubevirtFactory.Kubevirt().V1().VirtualMachine(),
-		vmiClient: cp.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
-		namespace: namespace,
+		vmClient:     cp.kubevirtFactory.Kubevirt().V1().VirtualMachine(),
+		vmiClient:    cp.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
+		nodeToVMName: nodeToVMName,
+		namespace:    namespace,
 	}
 
 	return cp, nil
@@ -99,6 +119,9 @@ func (c *CloudProvider) Initialize(clientBuilder cloudprovider.ControllerClientB
 		client,
 		c.localCoreFactory.Core().V1().Node(),
 		c.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
+		c.kubevirtClient,
+		c.nodeToVMName,
+		c.namespace,
 	)
 
 	go func() {

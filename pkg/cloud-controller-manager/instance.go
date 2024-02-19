@@ -3,6 +3,7 @@ package ccm
 import (
 	"context"
 	"net"
+	"sync"
 
 	ctlkubevirtv1 "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1"
 	v1 "k8s.io/api/core/v1"
@@ -14,23 +15,24 @@ import (
 )
 
 type instanceManager struct {
-	vmClient  ctlkubevirtv1.VirtualMachineClient
-	vmiClient ctlkubevirtv1.VirtualMachineInstanceClient
-	namespace string
+	vmClient     ctlkubevirtv1.VirtualMachineClient
+	vmiClient    ctlkubevirtv1.VirtualMachineInstanceClient
+	nodeToVMName *sync.Map
+	namespace    string
 }
 
 func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bool, error) {
-	if _, err := i.vmClient.Get(i.namespace, node.Name, metav1.GetOptions{}); err != nil && !errors.IsNotFound(err) {
-		return false, err
-	} else if errors.IsNotFound(err) {
+	if _, err := i.getVM(node); err != nil {
+		if !errors.IsNotFound(err) {
+			return false, err
+		}
 		return false, nil
-	} else {
-		return true, nil
 	}
+	return true, nil
 }
 
 func (i *instanceManager) InstanceShutdown(ctx context.Context, node *v1.Node) (bool, error) {
-	vm, err := i.vmClient.Get(i.namespace, node.Name, metav1.GetOptions{})
+	vm, err := i.getVM(node)
 	if err != nil {
 		return false, err
 	}
@@ -38,7 +40,7 @@ func (i *instanceManager) InstanceShutdown(ctx context.Context, node *v1.Node) (
 }
 
 func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (*cloudprovider.InstanceMetadata, error) {
-	vm, err := i.vmClient.Get(i.namespace, node.Name, metav1.GetOptions{})
+	vm, err := i.getVM(node)
 	if err != nil {
 		return nil, err
 	}
@@ -67,6 +69,14 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 	meta.NodeAddresses = getNodeAddresses(node, vmi)
 
 	return meta, nil
+}
+
+func (i *instanceManager) getVM(node *v1.Node) (*kubevirtv1.VirtualMachine, error) {
+	nodeName := node.Name
+	if vmName, ok := i.nodeToVMName.Load(nodeName); ok {
+		nodeName = vmName.(string)
+	}
+	return i.vmClient.Get(i.namespace, nodeName, metav1.GetOptions{})
 }
 
 // getNodeAddresses return nodeAddresses only when the value of annotation `alpha.kubernetes.io/provided-node-ip` is not empty
