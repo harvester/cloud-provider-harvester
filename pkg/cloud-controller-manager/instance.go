@@ -50,7 +50,7 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 		ProviderID: ProviderName + "://" + string(vm.UID),
 	}
 
-	vmi, err := i.vmiClient.Get(i.namespace, node.Name, metav1.GetOptions{})
+	vmi, err := i.vmiClient.Get(i.namespace, vm.Name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return meta, nil
