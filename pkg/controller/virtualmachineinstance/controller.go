@@ -40,6 +40,7 @@ func Register(
 		restClient:     restClient,
 		kubevirtClient: kubevirtClient,
 		nodeToVMName:   nodeToVMName,
+		namespace:      namespace,
 	}
 	vmis.OnChange(ctx, vmiControllerName, handler.OnVmiChanged)
 }
