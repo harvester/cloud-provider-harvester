@@ -27,6 +27,9 @@ func main() {
 	controllerInitializers := app.DefaultInitFuncConstructors
 
 	fss := cliflag.NamedFlagSets{}
+	harv := fss.FlagSet("harvester")
+	harv.BoolVar(&ccm.DisableVMIController, "disable-vmi-controller", ccm.DisableVMIController,
+		"The disable-vmi-controller will disable sync topology to nodes and not affect the custom cluster.")
 
 	command := app.NewCloudControllerManagerCommand(ccmOptions, cloudInitializer, controllerInitializers, fss, wait.NeverStop)
 
