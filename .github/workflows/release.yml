@@ -1,0 +1,14 @@
+name: Release Build and Publish
+
+on:
+  push:
+    tags:
+    - v**
+
+jobs:
+  build-for-release:
+    uses: ./.github/workflows/factory.yml
+    with:
+      tag: ${{ github.ref_name }}
+      push: true
+    secrets: inherit

@@ -1,0 +1,14 @@
+name: Dev Build and Publish
+
+on:
+  push:
+    branches:
+    - master
+
+jobs:
+  build-for-dev:
+    uses: ./.github/workflows/factory.yml
+    with:
+      tag: ${{ github.ref_name }}-head
+      push: true
+    secrets: inherit

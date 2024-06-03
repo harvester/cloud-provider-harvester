@@ -7,4 +7,7 @@ cd $(dirname $0)/..
 
 mkdir -p bin
 [ "$(uname)" != "Darwin" ] && LINKFLAGS="-extldflags -static -s"
-CGO_ENABLED=0 go build -ldflags "-X main.VERSION=$VERSION $LINKFLAGS" -o bin/harvester-cloud-provider
+
+for arch in "amd64" "arm64"; do
+    GOARCH="$arch" CGO_ENABLED=0 go build -ldflags "-X main.VERSION=$VERSION $LINKFLAGS" -o bin/harvester-cloud-provider-"$arch"
+done

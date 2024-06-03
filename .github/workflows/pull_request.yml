@@ -1,0 +1,13 @@
+name: Pull Request Build
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  build-for-dev:
+    uses: ./.github/workflows/factory.yml
+    with:
+      tag: pr-${{ github.event.number }}
+      push: false
+    secrets: inherit
