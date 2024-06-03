@@ -15,14 +15,11 @@ if echo $TAG | grep -q dirty; then
     TAG=dev
 fi
 
-mkdir -p dist/artifacts
-cp bin/harvester-cloud-provider dist/artifacts/harvester-cloud-provider${SUFFIX}
-
 IMAGE=${REPO}/harvester-cloud-provider:${TAG}
 DOCKERFILE=package/Dockerfile
 if [ -e ${DOCKERFILE}.${ARCH} ]; then
     DOCKERFILE=${DOCKERFILE}.${ARCH}
 fi
 
-docker build -f ${DOCKERFILE} -t ${IMAGE} .
+buildx build --load -f ${DOCKERFILE} -t ${IMAGE} .
 echo Built ${IMAGE}
