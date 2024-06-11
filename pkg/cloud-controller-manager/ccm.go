@@ -26,6 +26,8 @@ const (
 	threadiness = 2
 )
 
+var DisableVMIController bool
+
 type CloudProvider struct {
 	localCoreFactory *ctlcore.Factory
 	lbFactory        *ctllb.Factory
@@ -114,15 +116,17 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 func (c *CloudProvider) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, stop <-chan struct{}) {
 	client := clientBuilder.ClientOrDie(ProviderName)
 
-	vmi.Register(
-		c.Context,
-		client,
-		c.localCoreFactory.Core().V1().Node(),
-		c.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
-		c.kubevirtClient,
-		c.nodeToVMName,
-		c.namespace,
-	)
+	if !DisableVMIController {
+		vmi.Register(
+			c.Context,
+			client,
+			c.localCoreFactory.Core().V1().Node(),
+			c.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
+			c.kubevirtClient,
+			c.nodeToVMName,
+			c.namespace,
+		)
+	}
 
 	go func() {
 		if err := start.All(c.Context, threadiness, c.kubevirtFactory, c.localCoreFactory); err != nil {
