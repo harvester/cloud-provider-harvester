@@ -12,6 +12,7 @@ import (
 	"github.com/rancher/wrangler/pkg/kubeconfig"
 	"github.com/rancher/wrangler/pkg/signals"
 	"github.com/rancher/wrangler/pkg/start"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/klog/v2"
@@ -69,6 +70,9 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 	}
 
 	namespace := rawConfig.Contexts[rawConfig.CurrentContext].Namespace
+	if namespace == "" {
+		namespace = corev1.NamespaceDefault
+	}
 
 	localCfg, err := kubeconfig.GetNonInteractiveClientConfig(os.Getenv("KUBECONFIG")).ClientConfig()
 	if err != nil {
