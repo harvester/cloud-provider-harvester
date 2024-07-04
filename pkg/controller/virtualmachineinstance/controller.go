@@ -42,6 +42,10 @@ func Register(
 		nodeToVMName:   nodeToVMName,
 		namespace:      namespace,
 	}
+	logrus.WithFields(logrus.Fields{
+		"controller": vmiControllerName,
+		"namespace":  namespace,
+	}).Info("start watching virtual machine instance")
 	vmis.OnChange(ctx, vmiControllerName, handler.OnVmiChanged)
 }
 
@@ -63,10 +67,18 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 	// only handle the migration completed vmi
 	if vmi == nil || vmi.DeletionTimestamp != nil ||
 		vmi.Annotations == nil || vmi.Namespace != h.namespace || !isMigrationCompleted(vmi) {
+		logrus.WithFields(logrus.Fields{
+			"namespace": vmi.Namespace,
+			"name":      vmi.Name,
+		}).Info("skip processing virtual machine instance")
 		return vmi, nil
 	}
 
 	if creator := vmi.Labels[builder.LabelKeyVirtualMachineCreator]; creator != virtualmachine.VirtualMachineCreatorNodeDriver {
+		logrus.WithFields(logrus.Fields{
+			"namespace": vmi.Namespace,
+			"name":      vmi.Name,
+		}).Info("skip processing virtual machine instance")
 		return vmi, nil
 	}
 
