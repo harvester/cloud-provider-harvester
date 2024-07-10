@@ -257,8 +257,12 @@ func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.
 func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, service *v1.Service) error {
 	object, ip, err := waitForIP(func() (runtime.Object, string, error) {
 		lb, err := l.lbClient.Get(l.namespace, lbName, metav1.GetOptions{})
-		if err != nil || lb.Status.AllocatedAddress.IP == "" {
-			return nil, "", fmt.Errorf("could not get allocated IP address")
+		if err != nil {
+			return nil, "", fmt.Errorf("fail to get lb %w", err)
+		}
+		if lb.Status.AllocatedAddress.IP == "" {
+			// when Ready condition is false, the message has useful information
+			return nil, "", fmt.Errorf("ip is not allocated, mode: %s, message: %s", string(lb.Spec.IPAM), lbv1.LoadBalancerReady.GetMessage(lb))
 		}
 		return lb, lb.Status.AllocatedAddress.IP, nil
 	})
@@ -332,6 +336,7 @@ func (l *LoadBalancerManager) deleteLoadBalancer(clusterName string, service *v1
 }
 
 func waitForIP(callback func() (runtime.Object, string, error)) (runtime.Object, string, error) {
+	var err error
 	for i := 0; i < retryTimes; i++ {
 		object, ip, err := callback()
 		if err == nil {
@@ -340,7 +345,7 @@ func waitForIP(callback func() (runtime.Object, string, error)) (runtime.Object,
 		time.Sleep(retryInterval)
 	}
 
-	return nil, "", fmt.Errorf("timeout waiting for IP address")
+	return nil, "", fmt.Errorf("timeout waiting for IP address, last error:%w", err)
 }
 
 func (l *LoadBalancerManager) checkPortOverlap(primary, secondary *v1.Service) error {
