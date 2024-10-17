@@ -2,10 +2,14 @@ package ccm
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net"
+	"slices"
 	"sync"
 
 	ctlkubevirtv1 "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1"
+	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -86,6 +90,15 @@ func getNodeAddresses(node *v1.Node, vmi *kubevirtv1.VirtualMachineInstance) []v
 		return nil
 	}
 
+	aiIPs, err := getAdditionalInternalIPs(node)
+	if err != nil {
+		// if additional IPs are not correctly marked, only log an error, do not return this error
+		logrus.WithFields(logrus.Fields{
+			"namespace": node.Namespace,
+			"name":      node.Name,
+		}).Debugf("%s, skip it", err.Error())
+	}
+
 	nodeAddresses := make([]v1.NodeAddress, 0, len(vmi.Spec.Networks)+1)
 
 	for _, network := range vmi.Spec.Networks {
@@ -95,7 +108,7 @@ func getNodeAddresses(node *v1.Node, vmi *kubevirtv1.VirtualMachineInstance) []v
 					nodeAddr := v1.NodeAddress{
 						Address: networkInterface.IP,
 					}
-					if networkInterface.IP == providedNodeIP {
+					if networkInterface.IP == providedNodeIP || (aiIPs != nil && slices.Contains(aiIPs, networkInterface.IP)) {
 						nodeAddr.Type = v1.NodeInternalIP
 					} else {
 						nodeAddr.Type = v1.NodeExternalIP
@@ -111,4 +124,18 @@ func getNodeAddresses(node *v1.Node, vmi *kubevirtv1.VirtualMachineInstance) []v
 	})
 
 	return nodeAddresses
+}
+
+// User may want to mark some IPs of the node also as internal
+func getAdditionalInternalIPs(node *v1.Node) ([]string, error) {
+	aiIPs, ok := node.Annotations[KeyAdditionalInternalIPs]
+	if !ok {
+		return nil, nil
+	}
+	var ips []string
+	err := json.Unmarshal([]byte(aiIPs), &ips)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode additional external IPs from %v: %w", aiIPs, err)
+	}
+	return ips, nil
 }

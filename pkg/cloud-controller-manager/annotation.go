@@ -10,4 +10,6 @@ const (
 	KeyPrimaryService = prefix + "primary-service"
 
 	KeyKubevipLoadBalancerIP = "kube-vip.io/loadbalancerIPs"
+
+	KeyAdditionalInternalIPs = prefix + "additional-internal-ips"
 )
