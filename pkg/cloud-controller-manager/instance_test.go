@@ -24,10 +24,11 @@ const (
 
 func Test_getNodeAddresses(t *testing.T) {
 	tests := []struct {
-		name   string
-		node   *v1.Node
-		vmi    *kubevirtv1.VirtualMachineInstance
-		output []v1.NodeAddress
+		name    string
+		node    *v1.Node
+		vmi     *kubevirtv1.VirtualMachineInstance
+		output  []v1.NodeAddress
+		wantErr string
 	}{
 		{
 			name: "1 internal and 2 external IPs",
@@ -61,15 +62,15 @@ func Test_getNodeAddresses(t *testing.T) {
 					Interfaces: []kubevirtv1.VirtualMachineInstanceNetworkInterface{
 						{
 							Name: networkDefault,
-							IP:   networkDefaultIP,
+							IPs:  []string{networkDefaultIP},
 						},
 						{
 							Name: network120,
-							IP:   network120IP,
+							IPs:  []string{network120IP},
 						},
 						{
 							Name: network130,
-							IP:   network130IP,
+							IPs:  []string{network130IP},
 						},
 					},
 				},
@@ -126,15 +127,15 @@ func Test_getNodeAddresses(t *testing.T) {
 					Interfaces: []kubevirtv1.VirtualMachineInstanceNetworkInterface{
 						{
 							Name: networkDefault,
-							IP:   networkDefaultIP,
+							IPs:  []string{networkDefaultIP},
 						},
 						{
 							Name: network120,
-							IP:   network120IP,
+							IPs:  []string{network120IP},
 						},
 						{
 							Name: network130,
-							IP:   network130IP,
+							IPs:  []string{network130IP},
 						},
 					},
 				},
@@ -191,15 +192,15 @@ func Test_getNodeAddresses(t *testing.T) {
 					Interfaces: []kubevirtv1.VirtualMachineInstanceNetworkInterface{
 						{
 							Name: networkDefault,
-							IP:   networkDefaultIP,
+							IPs:  []string{networkDefaultIP},
 						},
 						{
 							Name: network120,
-							IP:   network120IP,
+							IPs:  []string{network120IP},
 						},
 						{
 							Name: network130,
-							IP:   network130IP,
+							IPs:  []string{network130IP},
 						},
 					},
 				},
@@ -256,15 +257,15 @@ func Test_getNodeAddresses(t *testing.T) {
 					Interfaces: []kubevirtv1.VirtualMachineInstanceNetworkInterface{
 						{
 							Name: networkDefault,
-							IP:   networkDefaultIP,
+							IPs:  []string{networkDefaultIP},
 						},
 						{
 							Name: network120,
-							IP:   network120IP,
+							IPs:  []string{network120IP},
 						},
 						{
 							Name: network130,
-							IP:   network130IP,
+							IPs:  []string{network130IP},
 						},
 					},
 				},
@@ -321,15 +322,15 @@ func Test_getNodeAddresses(t *testing.T) {
 					Interfaces: []kubevirtv1.VirtualMachineInstanceNetworkInterface{
 						{
 							Name: networkDefault,
-							IP:   networkDefaultIP,
+							IPs:  []string{networkDefaultIP},
 						},
 						{
 							Name: network120,
-							IP:   network120IP,
+							IPs:  []string{network120IP},
 						},
 						{
 							Name: network130,
-							IP:   network130IP,
+							IPs:  []string{network130IP},
 						},
 					},
 				},
@@ -353,6 +354,261 @@ func Test_getNodeAddresses(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Multiple IPs on one interface, all internal",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: nodeName,
+					Annotations: map[string]string{
+						api.AnnotationAlphaProvidedIPAddr: networkDefaultIP,
+						KeyAdditionalInternalIPs:          "[\"192.168.120.10\", \"192.168.130.10\"]",
+					},
+				},
+			},
+			vmi: &kubevirtv1.VirtualMachineInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      nodeName,
+				},
+				Spec: kubevirtv1.VirtualMachineInstanceSpec{
+					Networks: []kubevirtv1.Network{
+						{
+							Name: networkDefault,
+						},
+					},
+				},
+				Status: kubevirtv1.VirtualMachineInstanceStatus{
+					Interfaces: []kubevirtv1.VirtualMachineInstanceNetworkInterface{
+						{
+							Name: networkDefault,
+							IPs:  []string{networkDefaultIP, network120IP, network130IP},
+						},
+					},
+				},
+			},
+			output: []v1.NodeAddress{
+				{
+					Type:    v1.NodeInternalIP,
+					Address: networkDefaultIP,
+				},
+				{
+					Type:    v1.NodeInternalIP,
+					Address: network120IP,
+				},
+				{
+					Type:    v1.NodeInternalIP,
+					Address: network130IP,
+				},
+				{
+					Type:    v1.NodeHostName,
+					Address: nodeName,
+				},
+			},
+		},
+		{
+			name: "Multiple IPs on one interface, mix internal and external",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: nodeName,
+					Annotations: map[string]string{
+						api.AnnotationAlphaProvidedIPAddr: networkDefaultIP,
+						KeyAdditionalInternalIPs:          "[\"192.168.130.10\"]",
+					},
+				},
+			},
+			vmi: &kubevirtv1.VirtualMachineInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      nodeName,
+				},
+				Spec: kubevirtv1.VirtualMachineInstanceSpec{
+					Networks: []kubevirtv1.Network{
+						{
+							Name: networkDefault,
+						},
+					},
+				},
+				Status: kubevirtv1.VirtualMachineInstanceStatus{
+					Interfaces: []kubevirtv1.VirtualMachineInstanceNetworkInterface{
+						{
+							Name: networkDefault,
+							IPs:  []string{networkDefaultIP, network120IP, network130IP},
+						},
+					},
+				},
+			},
+			output: []v1.NodeAddress{
+				{
+					Type:    v1.NodeInternalIP,
+					Address: networkDefaultIP,
+				},
+				{
+					Type:    v1.NodeExternalIP,
+					Address: network120IP,
+				},
+				{
+					Type:    v1.NodeInternalIP,
+					Address: network130IP,
+				},
+				{
+					Type:    v1.NodeHostName,
+					Address: nodeName,
+				},
+			},
+		},
+		{
+			name: "Extra user defined internal IPs as range",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: nodeName,
+					Annotations: map[string]string{
+						api.AnnotationAlphaProvidedIPAddr: networkDefaultIP,
+						KeyAdditionalInternalIPs:          "[\"172.20.0.0/24\", \"192.168.130.10\", \"2001:db8::1/64\"]",
+					},
+				},
+			},
+			vmi: &kubevirtv1.VirtualMachineInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      nodeName,
+				},
+				Spec: kubevirtv1.VirtualMachineInstanceSpec{
+					Networks: []kubevirtv1.Network{
+						{
+							Name: networkDefault,
+						},
+						{
+							Name: network130,
+						},
+					},
+				},
+				Status: kubevirtv1.VirtualMachineInstanceStatus{
+					Interfaces: []kubevirtv1.VirtualMachineInstanceNetworkInterface{
+						{
+							Name: networkDefault,
+							IPs:  []string{networkDefaultIP, network120IP, "172.20.0.111", "2001:db8::1", "2001:f00::1"},
+						},
+						{
+							Name: network130,
+							IPs:  []string{network130IP, "172.20.0.222", "2001:db8::2"},
+						},
+					},
+				},
+			},
+			output: []v1.NodeAddress{
+				{
+					Type:    v1.NodeInternalIP,
+					Address: networkDefaultIP,
+				},
+				{
+					Type:    v1.NodeExternalIP,
+					Address: network120IP,
+				},
+				{
+					Type:    v1.NodeInternalIP,
+					Address: "172.20.0.111",
+				},
+				{
+					Type:    v1.NodeInternalIP,
+					Address: "2001:db8::1",
+				},
+				{
+					Type:    v1.NodeExternalIP,
+					Address: "2001:f00::1",
+				},
+				{
+					Type:    v1.NodeInternalIP,
+					Address: network130IP,
+				},
+				{
+					Type:    v1.NodeInternalIP,
+					Address: "172.20.0.222",
+				},
+				{
+					Type:    v1.NodeInternalIP,
+					Address: "2001:db8::2",
+				},
+				{
+					Type:    v1.NodeHostName,
+					Address: nodeName,
+				},
+			},
+		},
+		{
+			name: "No provided node IP annotation",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        nodeName,
+					Annotations: map[string]string{},
+				},
+			},
+			vmi: &kubevirtv1.VirtualMachineInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      nodeName,
+				},
+				Spec: kubevirtv1.VirtualMachineInstanceSpec{
+					Networks: []kubevirtv1.Network{
+						{
+							Name: networkDefault,
+						},
+						{
+							Name: network130,
+						},
+					},
+				},
+				Status: kubevirtv1.VirtualMachineInstanceStatus{
+					Interfaces: []kubevirtv1.VirtualMachineInstanceNetworkInterface{
+						{
+							Name: networkDefault,
+							IPs:  []string{"172.20.0.111", "2001:db8::1", "2001:f00::1"},
+						},
+						{
+							Name: network130,
+							IPs:  []string{"172.20.0.222", "2001:db8::2"},
+						},
+					},
+				},
+			},
+			output: []v1.NodeAddress{
+				{
+					Type:    v1.NodeInternalIP,
+					Address: "172.20.0.111",
+				},
+				{
+					Type:    v1.NodeInternalIP,
+					Address: "2001:db8::1",
+				},
+				{
+					Type:    v1.NodeInternalIP,
+					Address: "2001:f00::1",
+				},
+				{
+					Type:    v1.NodeInternalIP,
+					Address: "172.20.0.222",
+				},
+				{
+					Type:    v1.NodeInternalIP,
+					Address: "2001:db8::2",
+				},
+				{
+					Type:    v1.NodeHostName,
+					Address: nodeName,
+				},
+			},
+		},
+		{
+			name: "Malformed node IP annotation",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: nodeName,
+					Annotations: map[string]string{
+						api.AnnotationAlphaProvidedIPAddr: "broken",
+					},
+				},
+			},
+			wantErr: "annotation \"alpha.kubernetes.io/provided-node-ip\" is invalid: failed to parse IP address \"broken\": ParseAddr(\"broken\"): unable to parse IP",
+		},
 	}
 
 	checkOutputEqual := func(expected, output []v1.NodeAddress) bool {
@@ -369,7 +625,16 @@ func Test_getNodeAddresses(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ips := getNodeAddresses(tt.node, tt.vmi)
+			ips, err := getNodeAddresses(tt.node, tt.vmi)
+
+			var errStr string
+			if err != nil {
+				errStr = err.Error()
+			}
+
+			if errStr != tt.wantErr {
+				t.Errorf("getNodeAddresses() error = %v, wantErr %v", err, tt.wantErr)
+			}
 			if !checkOutputEqual(tt.output, ips) {
 				t.Errorf("case %v failed, expected output %+v, real output: %+v", tt.name, tt.output, ips)
 			}
