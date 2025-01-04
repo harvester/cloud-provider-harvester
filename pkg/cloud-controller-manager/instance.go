@@ -19,6 +19,8 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
+var linkLocalIPv6Range = netip.MustParsePrefix("fe80::/10")
+
 type instanceManager struct {
 	vmClient     ctlkubevirtv1.VirtualMachineClient
 	vmiClient    ctlkubevirtv1.VirtualMachineInstanceClient
@@ -120,6 +122,11 @@ func getNodeAddresses(node *v1.Node, vmi *kubevirtv1.VirtualMachineInstance) ([]
 					"namespace": node.Namespace,
 					"name":      node.Name,
 				}).Warnf("Unable to parse IP %s, skip it: %s", ipStr, err.Error())
+				continue
+			}
+
+			// Skip addresses in link local range, other nodes don't seem to be able to reach this address during cluster bootstrapping.
+			if ip.Is6() && linkLocalIPv6Range.Contains(ip) {
 				continue
 			}
 
