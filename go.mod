@@ -1,6 +1,6 @@
 module github.com/harvester/harvester-cloud-provider
 
-go 1.22
+go 1.23.4
 
 replace (
 	github.com/google/cel-go => github.com/google/cel-go v0.12.7
