@@ -1,5 +1,5 @@
 /*
-Copyright 2024 Rancher Labs, Inc.
+Copyright 2025 Rancher Labs, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,262 +20,54 @@ package v1
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	v1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	"github.com/rancher/lasso/pkg/client"
-	"github.com/rancher/lasso/pkg/controller"
-	"github.com/rancher/wrangler/pkg/apply"
-	"github.com/rancher/wrangler/pkg/condition"
-	"github.com/rancher/wrangler/pkg/generic"
-	"github.com/rancher/wrangler/pkg/kv"
+	"github.com/rancher/wrangler/v3/pkg/apply"
+	"github.com/rancher/wrangler/v3/pkg/condition"
+	"github.com/rancher/wrangler/v3/pkg/generic"
+	"github.com/rancher/wrangler/v3/pkg/kv"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/tools/cache"
 )
 
-type AlertmanagerHandler func(string, *v1.Alertmanager) (*v1.Alertmanager, error)
-
+// AlertmanagerController interface for managing Alertmanager resources.
 type AlertmanagerController interface {
-	generic.ControllerMeta
-	AlertmanagerClient
-
-	OnChange(ctx context.Context, name string, sync AlertmanagerHandler)
-	OnRemove(ctx context.Context, name string, sync AlertmanagerHandler)
-	Enqueue(namespace, name string)
-	EnqueueAfter(namespace, name string, duration time.Duration)
-
-	Cache() AlertmanagerCache
+	generic.ControllerInterface[*v1.Alertmanager, *v1.AlertmanagerList]
 }
 
+// AlertmanagerClient interface for managing Alertmanager resources in Kubernetes.
 type AlertmanagerClient interface {
-	Create(*v1.Alertmanager) (*v1.Alertmanager, error)
-	Update(*v1.Alertmanager) (*v1.Alertmanager, error)
-	UpdateStatus(*v1.Alertmanager) (*v1.Alertmanager, error)
-	Delete(namespace, name string, options *metav1.DeleteOptions) error
-	Get(namespace, name string, options metav1.GetOptions) (*v1.Alertmanager, error)
-	List(namespace string, opts metav1.ListOptions) (*v1.AlertmanagerList, error)
-	Watch(namespace string, opts metav1.ListOptions) (watch.Interface, error)
-	Patch(namespace, name string, pt types.PatchType, data []byte, subresources ...string) (result *v1.Alertmanager, err error)
+	generic.ClientInterface[*v1.Alertmanager, *v1.AlertmanagerList]
 }
 
+// AlertmanagerCache interface for retrieving Alertmanager resources in memory.
 type AlertmanagerCache interface {
-	Get(namespace, name string) (*v1.Alertmanager, error)
-	List(namespace string, selector labels.Selector) ([]*v1.Alertmanager, error)
-
-	AddIndexer(indexName string, indexer AlertmanagerIndexer)
-	GetByIndex(indexName, key string) ([]*v1.Alertmanager, error)
+	generic.CacheInterface[*v1.Alertmanager]
 }
 
-type AlertmanagerIndexer func(obj *v1.Alertmanager) ([]string, error)
-
-type alertmanagerController struct {
-	controller    controller.SharedController
-	client        *client.Client
-	gvk           schema.GroupVersionKind
-	groupResource schema.GroupResource
-}
-
-func NewAlertmanagerController(gvk schema.GroupVersionKind, resource string, namespaced bool, controller controller.SharedControllerFactory) AlertmanagerController {
-	c := controller.ForResourceKind(gvk.GroupVersion().WithResource(resource), gvk.Kind, namespaced)
-	return &alertmanagerController{
-		controller: c,
-		client:     c.Client(),
-		gvk:        gvk,
-		groupResource: schema.GroupResource{
-			Group:    gvk.Group,
-			Resource: resource,
-		},
-	}
-}
-
-func FromAlertmanagerHandlerToHandler(sync AlertmanagerHandler) generic.Handler {
-	return func(key string, obj runtime.Object) (ret runtime.Object, err error) {
-		var v *v1.Alertmanager
-		if obj == nil {
-			v, err = sync(key, nil)
-		} else {
-			v, err = sync(key, obj.(*v1.Alertmanager))
-		}
-		if v == nil {
-			return nil, err
-		}
-		return v, err
-	}
-}
-
-func (c *alertmanagerController) Updater() generic.Updater {
-	return func(obj runtime.Object) (runtime.Object, error) {
-		newObj, err := c.Update(obj.(*v1.Alertmanager))
-		if newObj == nil {
-			return nil, err
-		}
-		return newObj, err
-	}
-}
-
-func UpdateAlertmanagerDeepCopyOnChange(client AlertmanagerClient, obj *v1.Alertmanager, handler func(obj *v1.Alertmanager) (*v1.Alertmanager, error)) (*v1.Alertmanager, error) {
-	if obj == nil {
-		return obj, nil
-	}
-
-	copyObj := obj.DeepCopy()
-	newObj, err := handler(copyObj)
-	if newObj != nil {
-		copyObj = newObj
-	}
-	if obj.ResourceVersion == copyObj.ResourceVersion && !equality.Semantic.DeepEqual(obj, copyObj) {
-		return client.Update(copyObj)
-	}
-
-	return copyObj, err
-}
-
-func (c *alertmanagerController) AddGenericHandler(ctx context.Context, name string, handler generic.Handler) {
-	c.controller.RegisterHandler(ctx, name, controller.SharedControllerHandlerFunc(handler))
-}
-
-func (c *alertmanagerController) AddGenericRemoveHandler(ctx context.Context, name string, handler generic.Handler) {
-	c.AddGenericHandler(ctx, name, generic.NewRemoveHandler(name, c.Updater(), handler))
-}
-
-func (c *alertmanagerController) OnChange(ctx context.Context, name string, sync AlertmanagerHandler) {
-	c.AddGenericHandler(ctx, name, FromAlertmanagerHandlerToHandler(sync))
-}
-
-func (c *alertmanagerController) OnRemove(ctx context.Context, name string, sync AlertmanagerHandler) {
-	c.AddGenericHandler(ctx, name, generic.NewRemoveHandler(name, c.Updater(), FromAlertmanagerHandlerToHandler(sync)))
-}
-
-func (c *alertmanagerController) Enqueue(namespace, name string) {
-	c.controller.Enqueue(namespace, name)
-}
-
-func (c *alertmanagerController) EnqueueAfter(namespace, name string, duration time.Duration) {
-	c.controller.EnqueueAfter(namespace, name, duration)
-}
-
-func (c *alertmanagerController) Informer() cache.SharedIndexInformer {
-	return c.controller.Informer()
-}
-
-func (c *alertmanagerController) GroupVersionKind() schema.GroupVersionKind {
-	return c.gvk
-}
-
-func (c *alertmanagerController) Cache() AlertmanagerCache {
-	return &alertmanagerCache{
-		indexer:  c.Informer().GetIndexer(),
-		resource: c.groupResource,
-	}
-}
-
-func (c *alertmanagerController) Create(obj *v1.Alertmanager) (*v1.Alertmanager, error) {
-	result := &v1.Alertmanager{}
-	return result, c.client.Create(context.TODO(), obj.Namespace, obj, result, metav1.CreateOptions{})
-}
-
-func (c *alertmanagerController) Update(obj *v1.Alertmanager) (*v1.Alertmanager, error) {
-	result := &v1.Alertmanager{}
-	return result, c.client.Update(context.TODO(), obj.Namespace, obj, result, metav1.UpdateOptions{})
-}
-
-func (c *alertmanagerController) UpdateStatus(obj *v1.Alertmanager) (*v1.Alertmanager, error) {
-	result := &v1.Alertmanager{}
-	return result, c.client.UpdateStatus(context.TODO(), obj.Namespace, obj, result, metav1.UpdateOptions{})
-}
-
-func (c *alertmanagerController) Delete(namespace, name string, options *metav1.DeleteOptions) error {
-	if options == nil {
-		options = &metav1.DeleteOptions{}
-	}
-	return c.client.Delete(context.TODO(), namespace, name, *options)
-}
-
-func (c *alertmanagerController) Get(namespace, name string, options metav1.GetOptions) (*v1.Alertmanager, error) {
-	result := &v1.Alertmanager{}
-	return result, c.client.Get(context.TODO(), namespace, name, result, options)
-}
-
-func (c *alertmanagerController) List(namespace string, opts metav1.ListOptions) (*v1.AlertmanagerList, error) {
-	result := &v1.AlertmanagerList{}
-	return result, c.client.List(context.TODO(), namespace, result, opts)
-}
-
-func (c *alertmanagerController) Watch(namespace string, opts metav1.ListOptions) (watch.Interface, error) {
-	return c.client.Watch(context.TODO(), namespace, opts)
-}
-
-func (c *alertmanagerController) Patch(namespace, name string, pt types.PatchType, data []byte, subresources ...string) (*v1.Alertmanager, error) {
-	result := &v1.Alertmanager{}
-	return result, c.client.Patch(context.TODO(), namespace, name, pt, data, result, metav1.PatchOptions{}, subresources...)
-}
-
-type alertmanagerCache struct {
-	indexer  cache.Indexer
-	resource schema.GroupResource
-}
-
-func (c *alertmanagerCache) Get(namespace, name string) (*v1.Alertmanager, error) {
-	obj, exists, err := c.indexer.GetByKey(namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(c.resource, name)
-	}
-	return obj.(*v1.Alertmanager), nil
-}
-
-func (c *alertmanagerCache) List(namespace string, selector labels.Selector) (ret []*v1.Alertmanager, err error) {
-
-	err = cache.ListAllByNamespace(c.indexer, namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.Alertmanager))
-	})
-
-	return ret, err
-}
-
-func (c *alertmanagerCache) AddIndexer(indexName string, indexer AlertmanagerIndexer) {
-	utilruntime.Must(c.indexer.AddIndexers(map[string]cache.IndexFunc{
-		indexName: func(obj interface{}) (strings []string, e error) {
-			return indexer(obj.(*v1.Alertmanager))
-		},
-	}))
-}
-
-func (c *alertmanagerCache) GetByIndex(indexName, key string) (result []*v1.Alertmanager, err error) {
-	objs, err := c.indexer.ByIndex(indexName, key)
-	if err != nil {
-		return nil, err
-	}
-	result = make([]*v1.Alertmanager, 0, len(objs))
-	for _, obj := range objs {
-		result = append(result, obj.(*v1.Alertmanager))
-	}
-	return result, nil
-}
-
+// AlertmanagerStatusHandler is executed for every added or modified Alertmanager. Should return the new status to be updated
 type AlertmanagerStatusHandler func(obj *v1.Alertmanager, status v1.AlertmanagerStatus) (v1.AlertmanagerStatus, error)
 
+// AlertmanagerGeneratingHandler is the top-level handler that is executed for every Alertmanager event. It extends AlertmanagerStatusHandler by a returning a slice of child objects to be passed to apply.Apply
 type AlertmanagerGeneratingHandler func(obj *v1.Alertmanager, status v1.AlertmanagerStatus) ([]runtime.Object, v1.AlertmanagerStatus, error)
 
+// RegisterAlertmanagerStatusHandler configures a AlertmanagerController to execute a AlertmanagerStatusHandler for every events observed.
+// If a non-empty condition is provided, it will be updated in the status conditions for every handler execution
 func RegisterAlertmanagerStatusHandler(ctx context.Context, controller AlertmanagerController, condition condition.Cond, name string, handler AlertmanagerStatusHandler) {
 	statusHandler := &alertmanagerStatusHandler{
 		client:    controller,
 		condition: condition,
 		handler:   handler,
 	}
-	controller.AddGenericHandler(ctx, name, FromAlertmanagerHandlerToHandler(statusHandler.sync))
+	controller.AddGenericHandler(ctx, name, generic.FromObjectHandlerToHandler(statusHandler.sync))
 }
 
+// RegisterAlertmanagerGeneratingHandler configures a AlertmanagerController to execute a AlertmanagerGeneratingHandler for every events observed, passing the returned objects to the provided apply.Apply.
+// If a non-empty condition is provided, it will be updated in the status conditions for every handler execution
 func RegisterAlertmanagerGeneratingHandler(ctx context.Context, controller AlertmanagerController, apply apply.Apply,
 	condition condition.Cond, name string, handler AlertmanagerGeneratingHandler, opts *generic.GeneratingHandlerOptions) {
 	statusHandler := &alertmanagerGeneratingHandler{
@@ -297,6 +89,7 @@ type alertmanagerStatusHandler struct {
 	handler   AlertmanagerStatusHandler
 }
 
+// sync is executed on every resource addition or modification. Executes the configured handlers and sends the updated status to the Kubernetes API
 func (a *alertmanagerStatusHandler) sync(key string, obj *v1.Alertmanager) (*v1.Alertmanager, error) {
 	if obj == nil {
 		return obj, nil
@@ -342,8 +135,10 @@ type alertmanagerGeneratingHandler struct {
 	opts  generic.GeneratingHandlerOptions
 	gvk   schema.GroupVersionKind
 	name  string
+	seen  sync.Map
 }
 
+// Remove handles the observed deletion of a resource, cascade deleting every associated resource previously applied
 func (a *alertmanagerGeneratingHandler) Remove(key string, obj *v1.Alertmanager) (*v1.Alertmanager, error) {
 	if obj != nil {
 		return obj, nil
@@ -353,12 +148,17 @@ func (a *alertmanagerGeneratingHandler) Remove(key string, obj *v1.Alertmanager)
 	obj.Namespace, obj.Name = kv.RSplit(key, "/")
 	obj.SetGroupVersionKind(a.gvk)
 
+	if a.opts.UniqueApplyForResourceVersion {
+		a.seen.Delete(key)
+	}
+
 	return nil, generic.ConfigureApplyForObject(a.apply, obj, &a.opts).
 		WithOwner(obj).
 		WithSetID(a.name).
 		ApplyObjects()
 }
 
+// Handle executes the configured AlertmanagerGeneratingHandler and pass the resulting objects to apply.Apply, finally returning the new status of the resource
 func (a *alertmanagerGeneratingHandler) Handle(obj *v1.Alertmanager, status v1.AlertmanagerStatus) (v1.AlertmanagerStatus, error) {
 	if !obj.DeletionTimestamp.IsZero() {
 		return status, nil
@@ -368,9 +168,41 @@ func (a *alertmanagerGeneratingHandler) Handle(obj *v1.Alertmanager, status v1.A
 	if err != nil {
 		return newStatus, err
 	}
+	if !a.isNewResourceVersion(obj) {
+		return newStatus, nil
+	}
 
-	return newStatus, generic.ConfigureApplyForObject(a.apply, obj, &a.opts).
+	err = generic.ConfigureApplyForObject(a.apply, obj, &a.opts).
 		WithOwner(obj).
 		WithSetID(a.name).
 		ApplyObjects(objs...)
+	if err != nil {
+		return newStatus, err
+	}
+	a.storeResourceVersion(obj)
+	return newStatus, nil
+}
+
+// isNewResourceVersion detects if a specific resource version was already successfully processed.
+// Only used if UniqueApplyForResourceVersion is set in generic.GeneratingHandlerOptions
+func (a *alertmanagerGeneratingHandler) isNewResourceVersion(obj *v1.Alertmanager) bool {
+	if !a.opts.UniqueApplyForResourceVersion {
+		return true
+	}
+
+	// Apply once per resource version
+	key := obj.Namespace + "/" + obj.Name
+	previous, ok := a.seen.Load(key)
+	return !ok || previous != obj.ResourceVersion
+}
+
+// storeResourceVersion keeps track of the latest resource version of an object for which Apply was executed
+// Only used if UniqueApplyForResourceVersion is set in generic.GeneratingHandlerOptions
+func (a *alertmanagerGeneratingHandler) storeResourceVersion(obj *v1.Alertmanager) {
+	if !a.opts.UniqueApplyForResourceVersion {
+		return
+	}
+
+	key := obj.Namespace + "/" + obj.Name
+	a.seen.Store(key, obj.ResourceVersion)
 }

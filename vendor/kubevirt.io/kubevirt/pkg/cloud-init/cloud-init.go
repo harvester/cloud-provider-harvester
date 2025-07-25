@@ -31,7 +31,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/log"
@@ -116,7 +116,7 @@ func IsValidCloudInitData(cloudInitData *CloudInitData) bool {
 
 func cloudInitUUIDFromVMI(vmi *v1.VirtualMachineInstance) string {
 	if vmi.Spec.Domain.Firmware == nil {
-		return uuid.NewRandom().String()
+		return uuid.NewString()
 	}
 	return string(vmi.Spec.Domain.Firmware.UUID)
 }
@@ -261,10 +261,6 @@ func resolveNoCloudSecrets(vmi *v1.VirtualMachineInstance, secretSourceDir strin
 // Note: when using this function, make sure that your code can access the secret volumes.
 func resolveConfigDriveSecrets(vmi *v1.VirtualMachineInstance, secretSourceDir string) (map[string]string, error) {
 	keys, err := resolveSSHPublicKeys(vmi.Spec.AccessCredentials, secretSourceDir, isConfigDriveAccessCredential)
-	if err != nil {
-		return keys, err
-	}
-
 	if err != nil {
 		return keys, err
 	}

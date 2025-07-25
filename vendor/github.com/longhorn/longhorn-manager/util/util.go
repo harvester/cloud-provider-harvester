@@ -1,7 +1,6 @@
 package util
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
@@ -14,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"reflect"
@@ -45,15 +43,25 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	clientset "k8s.io/client-go/kubernetes"
 
-	iscsiutil "github.com/longhorn/go-iscsi-helper/util"
+	lhio "github.com/longhorn/go-common-libs/io"
+	lhns "github.com/longhorn/go-common-libs/ns"
+	lhtypes "github.com/longhorn/go-common-libs/types"
+
+	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
 )
 
 const (
+	KiB = 1024
+	MiB = 1024 * KiB
+	GiB = 1024 * MiB
+	TiB = 1024 * GiB
+	PiB = 1024 * TiB
+	EiB = 1024 * PiB
+
 	VolumeStackPrefix     = "volume-"
 	ControllerServiceName = "controller"
 	ReplicaServiceName    = "replica"
 
-	HostProcPath                 = "/host/proc"
 	ReplicaDirectory             = "/replicas/"
 	RegularDeviceDirectory       = "/dev/longhorn/"
 	EncryptedDeviceDirectory     = "/dev/mapper/"
@@ -63,16 +71,19 @@ const (
 
 	DiskConfigFile = "longhorn-disk.cfg"
 
-	SizeAlignment     = 2 * 1024 * 1024
-	MinimalVolumeSize = 10 * 1024 * 1024
+	SizeAlignment        = 2 * MiB
+	MinimalVolumeSize    = 10 * MiB
+	MinimalVolumeSizeXFS = 300 * MiB // See https://github.com/longhorn/longhorn/issues/8488
 
-	RandomIDLenth = 8
+	MaxExt4VolumeSize = 16 * TiB
+	MaxXfsVolumeSize  = 8*EiB - 1
+
+	RandomIDLength = 8
 
 	DeterministicUUIDNamespace = "08958d54-65cd-4d87-8627-9831a1eab170" // Arbitrarily generated.
 )
 
 var (
-	cmdTimeout     = time.Minute // one minute by default
 	reservedLabels = []string{"KubernetesStatus", "ranchervm-base-image"}
 
 	APIRetryInterval       = 500 * time.Millisecond
@@ -85,17 +96,6 @@ type MetadataConfig struct {
 	Image               string
 	OrcImage            string
 	DriverContainerName string
-}
-
-type DiskStat struct {
-	DiskID           string
-	Path             string
-	Type             string
-	FreeBlocks       int64
-	TotalBlocks      int64
-	BlockSize        int64
-	StorageMaximum   int64
-	StorageAvailable int64
 }
 
 func ConvertSize(size interface{}) (int64, error) {
@@ -185,7 +185,7 @@ func WaitForDevice(dev string, timeout int) error {
 }
 
 func RandomID() string {
-	return UUID()[:RandomIDLenth]
+	return UUID()[:RandomIDLength]
 }
 
 // DeterministicUUID returns a string representation of a version 5 UUID based on the provided string. The output is
@@ -198,7 +198,7 @@ func DeterministicUUID(data string) string {
 }
 
 func ValidateRandomID(id string) bool {
-	regex := fmt.Sprintf(`^[a-zA-Z0-9]{%d}$`, RandomIDLenth)
+	regex := fmt.Sprintf(`^[a-zA-Z0-9]{%d}$`, RandomIDLength)
 	validName := regexp.MustCompile(regex)
 	return validName.MatchString(id)
 }
@@ -236,70 +236,13 @@ func Now() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
+func TimestampAfterDuration(d time.Duration) string {
+	return time.Now().Add(d).UTC().Format(time.RFC3339)
+}
+
 func ParseTime(t string) (time.Time, error) {
 	return time.Parse(time.RFC3339, t)
 
-}
-
-type ExecuteFunc func([]string, string, ...string) (string, error)
-
-// Execute is a variable holding the function responsible for executing commands.
-// By using a variable for the execution function, it allows for easier unit testing
-// by substituting a mock implementation.
-var Execute ExecuteFunc = execute
-
-func execute(envs []string, binary string, args ...string) (string, error) {
-	return ExecuteWithTimeout(cmdTimeout, envs, binary, args...)
-}
-
-func ExecuteWithTimeout(timeout time.Duration, envs []string, binary string, args ...string) (string, error) {
-	var err error
-	cmd := exec.Command(binary, args...)
-	cmd.Env = append(os.Environ(), envs...)
-	done := make(chan struct{})
-
-	var output, stderr bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &stderr
-
-	go func() {
-		err = cmd.Run()
-		done <- struct{}{}
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(timeout):
-		if cmd.Process != nil {
-			if err := cmd.Process.Kill(); err != nil {
-				logrus.Warnf("Problem killing process pid=%v: %s", cmd.Process.Pid, err)
-			}
-
-		}
-		return "", fmt.Errorf("timeout executing: %v %v, output %s, stderr, %s, error %v",
-			binary, args, output.String(), stderr.String(), err)
-	}
-
-	if err != nil {
-		return "", fmt.Errorf("failed to execute: %v %v, output %s, stderr, %s, error %v",
-			binary, args, output.String(), stderr.String(), err)
-	}
-	return output.String(), nil
-}
-
-func ExecuteWithoutTimeout(envs []string, binary string, args ...string) (string, error) {
-	cmd := exec.Command(binary, args...)
-	cmd.Env = append(os.Environ(), envs...)
-
-	var output, stderr bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return output.String(), fmt.Errorf("failed to execute: %v %v, output %s, stderr, %s, error %v",
-			binary, args, output.String(), stderr.String(), err)
-	}
-	return output.String(), nil
 }
 
 func TimestampAfterTimeout(ts string, timeout time.Duration) bool {
@@ -323,8 +266,27 @@ func TimestampWithinLimit(latest time.Time, ts string, limit time.Duration) bool
 	return deadline.After(latest)
 }
 
-func ValidateName(name string) bool {
+// TimestampAfterTimestamp returns true if timestamp1 is after timestamp2. It returns false otherwise and an error if
+// either timestamp cannot be parsed.
+func TimestampAfterTimestamp(timestamp1 string, timestamp2 string) (bool, error) {
+	time1, err := time.Parse(time.RFC3339, timestamp1)
+	if err != nil {
+		return false, errors.Wrapf(err, "cannot parse timestamp %v", timestamp1)
+	}
+	time2, err := time.Parse(time.RFC3339, timestamp2)
+	if err != nil {
+		return false, errors.Wrapf(err, "cannot parse timestamp %v", timestamp2)
+	}
+	return time1.After(time2), nil
+}
+
+func ValidateString(name string) bool {
 	validName := regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]+$`)
+	return validName.MatchString(name)
+}
+
+func ValidateName(name string) bool {
+	validName := regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]+$`)
 	return validName.MatchString(name)
 }
 
@@ -467,45 +429,6 @@ func CheckBackupType(backupTarget string) (string, error) {
 	return u.Scheme, nil
 }
 
-type FsStat struct {
-	Fsid       string
-	Path       string
-	Type       string
-	FreeBlock  int64
-	TotalBlock int64
-	BlockSize  int64
-}
-
-func GetDiskStat(directory string) (stat *DiskStat, err error) {
-	defer func() {
-		err = errors.Wrapf(err, "cannot get disk stat of directory %v", directory)
-	}()
-	initiatorNSPath := iscsiutil.GetHostNamespacePath(HostProcPath)
-	mountPath := fmt.Sprintf("--mount=%s/mnt", initiatorNSPath)
-	output, err := Execute([]string{}, "nsenter", mountPath, "stat", "-fc", "{\"path\":\"%n\",\"fsid\":\"%i\",\"type\":\"%T\",\"freeBlock\":%f,\"totalBlock\":%b,\"blockSize\":%S}", directory)
-	if err != nil {
-		return nil, err
-	}
-	output = strings.Replace(output, "\n", "", -1)
-
-	fsStat := &FsStat{}
-	err = json.Unmarshal([]byte(output), fsStat)
-	if err != nil {
-		return nil, err
-	}
-
-	return &DiskStat{
-		DiskID:           fsStat.Fsid,
-		Path:             fsStat.Path,
-		Type:             fsStat.Type,
-		FreeBlocks:       fsStat.FreeBlock,
-		TotalBlocks:      fsStat.TotalBlock,
-		BlockSize:        fsStat.BlockSize,
-		StorageMaximum:   fsStat.TotalBlock * fsStat.BlockSize,
-		StorageAvailable: fsStat.FreeBlock * fsStat.BlockSize,
-	}, nil
-}
-
 func RetryOnConflictCause(fn func() (interface{}, error)) (interface{}, error) {
 	return RetryOnErrorCondition(fn, apierrors.IsConflict)
 }
@@ -536,44 +459,14 @@ func RunAsync(wg *sync.WaitGroup, f func()) {
 	}()
 }
 
-func RemoveHostDirectoryContent(directory string) (err error) {
-	defer func() {
-		err = errors.Wrapf(err, "failed to remove host directory %v", directory)
-	}()
-
-	dir, err := filepath.Abs(filepath.Clean(directory))
-	if err != nil {
-		return err
-	}
-	if strings.Count(dir, "/") < 2 {
-		return fmt.Errorf("prohibit removing the top level of directory %v", dir)
-	}
-	initiatorNSPath := iscsiutil.GetHostNamespacePath(HostProcPath)
-	nsExec, err := iscsiutil.NewNamespaceExecutor(initiatorNSPath)
-	if err != nil {
-		return err
-	}
-	// check if the directory already deleted
-	if _, err := nsExec.Execute("ls", []string{dir}); err != nil {
-		logrus.Warnf("cannot find host directory %v for removal", dir)
-		return nil
-	}
-	if _, err := nsExec.Execute("rm", []string{"-rf", dir}); err != nil {
-		return err
-	}
-	return nil
-}
-
 type filteredLoggingHandler struct {
-	filteredPaths  map[string]struct{}
 	handler        http.Handler
 	loggingHandler http.Handler
 }
 
-func FilteredLoggingHandler(filteredPaths map[string]struct{}, writer io.Writer, router http.Handler) http.Handler {
+func FilteredLoggingHandler(writer io.Writer, router http.Handler) http.Handler {
 
 	return filteredLoggingHandler{
-		filteredPaths:  filteredPaths,
 		handler:        router,
 		loggingHandler: handlers.CombinedLoggingHandler(writer, router),
 	}
@@ -582,7 +475,7 @@ func FilteredLoggingHandler(filteredPaths map[string]struct{}, writer io.Writer,
 func (h filteredLoggingHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	switch req.Method {
 	case "GET":
-		if _, exists := h.filteredPaths[req.URL.Path]; exists {
+		if logrus.GetLevel() < logrus.DebugLevel {
 			h.handler.ServeHTTP(w, req)
 			return
 		}
@@ -612,6 +505,14 @@ func ValidateSnapshotLabels(labels map[string]string) (map[string]string, error)
 	return validLabels, nil
 }
 
+func ValidateBackupMode(backupMode string) error {
+	if longhorn.BackupMode(backupMode) != longhorn.BackupModeFull &&
+		longhorn.BackupMode(backupMode) != longhorn.BackupModeIncremental {
+		return fmt.Errorf("backup mode: %v is not a valid option", backupMode)
+	}
+	return nil
+}
+
 func ValidateTags(inputTags []string) ([]string, error) {
 	foundTags := make(map[string]struct{})
 	var tags []string
@@ -632,41 +533,26 @@ func ValidateTags(inputTags []string) ([]string, error) {
 	return tags, nil
 }
 
-func CreateDiskPathReplicaSubdirectory(path string) error {
-	nsPath := iscsiutil.GetHostNamespacePath(HostProcPath)
-	nsExec, err := iscsiutil.NewNamespaceExecutor(nsPath)
-	if err != nil {
-		return err
+func DeleteDiskPathReplicaSubdirectoryAndDiskCfgFile(path string) error {
+	replicaDirectoryPath := filepath.Join(path, ReplicaDirectory)
+	diskCfgFilePath := filepath.Join(path, DiskConfigFile)
+
+	// Delete the replica directory on host
+	if _, err := lhns.GetFileInfo(replicaDirectoryPath); err == nil {
+		logrus.Tracef("Deleting replica directory %v", replicaDirectoryPath)
+		if err := lhns.DeletePath(replicaDirectoryPath); err != nil {
+			return errors.Wrapf(err, "failed to delete host replica directory %v", replicaDirectoryPath)
+		}
 	}
-	if _, err := nsExec.Execute("mkdir", []string{"-p", filepath.Join(path, ReplicaDirectory)}); err != nil {
-		return errors.Wrapf(err, "error creating data path %v on host", path)
+
+	if _, err := lhns.GetFileInfo(diskCfgFilePath); err == nil {
+		logrus.Tracef("Deleting disk cfg file %v", diskCfgFilePath)
+		if err := lhns.DeletePath(diskCfgFilePath); err != nil {
+			return errors.Wrapf(err, "failed to delete host disk cfg file %v", diskCfgFilePath)
+		}
 	}
 
 	return nil
-}
-
-func DeleteDiskPathReplicaSubdirectoryAndDiskCfgFile(
-	nsExec *iscsiutil.NamespaceExecutor, path string) error {
-
-	var err error
-	dirPath := filepath.Join(path, ReplicaDirectory)
-	filePath := filepath.Join(path, DiskConfigFile)
-
-	// Check if the replica directory exist, delete it
-	if _, err := nsExec.Execute("ls", []string{dirPath}); err == nil {
-		if _, err := nsExec.Execute("rmdir", []string{dirPath}); err != nil {
-			return errors.Wrapf(err, "error deleting data path %v on host", path)
-		}
-	}
-
-	// Check if the disk cfg file exist, delete it
-	if _, err := nsExec.Execute("ls", []string{filePath}); err == nil {
-		if _, err := nsExec.Execute("rm", []string{filePath}); err != nil {
-			err = errors.Wrapf(err, "error deleting disk cfg file %v on host", filePath)
-		}
-	}
-
-	return err
 }
 
 func IsKubernetesDefaultToleration(toleration corev1.Toleration) bool {
@@ -747,7 +633,9 @@ func IsKubernetesVersionAtLeast(kubeClient clientset.Interface, vers string) (bo
 }
 
 type DiskConfig struct {
-	DiskUUID string `json:"diskUUID"`
+	DiskName   string              `json:"diskName"`
+	DiskUUID   string              `json:"diskUUID"`
+	DiskDriver longhorn.DiskDriver `json:"diskDriver"`
 }
 
 func MinInt(a, b int) int {
@@ -786,42 +674,24 @@ func GetPossibleReplicaDirectoryNames(diskPath string) (replicaDirectoryNames ma
 	}()
 
 	replicaDirectoryNames = make(map[string]string, 0)
+	path := filepath.Join(diskPath, "replicas")
 
-	directory := filepath.Join(diskPath, "replicas")
-
-	initiatorNSPath := iscsiutil.GetHostNamespacePath(HostProcPath)
-	mountPath := fmt.Sprintf("--mount=%s/mnt", initiatorNSPath)
-	command := fmt.Sprintf("find %s -type d -maxdepth 1 -mindepth 1 -regextype posix-extended -regex \".*-[a-zA-Z0-9]{8}$\" -exec basename {} \\;", directory)
-	output, err := Execute([]string{}, "nsenter", mountPath, "sh", "-c", command)
+	files, err := lhns.ReadDirectory(path)
 	if err != nil {
 		return replicaDirectoryNames, err
 	}
 
-	names := strings.Split(output, "\n")
-	for _, name := range names {
-		if name != "" {
-			replicaDirectoryNames[name] = ""
+	// Compile the regular expression pattern
+	pattern := regexp.MustCompile(`.*-[a-zA-Z0-9]{8}$`)
+
+	// Iterate over the files and filter directories based on the pattern
+	for _, file := range files {
+		if file.IsDir() && pattern.MatchString(file.Name()) {
+			replicaDirectoryNames[file.Name()] = ""
 		}
 	}
 
 	return replicaDirectoryNames, nil
-}
-
-func DeleteReplicaDirectory(diskPath, replicaDirectoryName string) (err error) {
-	defer func() {
-		err = errors.Wrapf(err, "cannot delete replica directory %v in disk %v", replicaDirectoryName, diskPath)
-	}()
-
-	path := filepath.Join(diskPath, "replicas", replicaDirectoryName)
-
-	initiatorNSPath := iscsiutil.GetHostNamespacePath(HostProcPath)
-	mountPath := fmt.Sprintf("--mount=%s/mnt", initiatorNSPath)
-	_, err = Execute([]string{}, "nsenter", mountPath, "rm", "-rf", path)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 type VolumeMeta struct {
@@ -837,13 +707,7 @@ type VolumeMeta struct {
 }
 
 func GetVolumeMeta(path string) (*VolumeMeta, error) {
-	nsPath := iscsiutil.GetHostNamespacePath(HostProcPath)
-	nsExec, err := iscsiutil.NewNamespaceExecutor(nsPath)
-	if err != nil {
-		return nil, err
-	}
-
-	output, err := nsExec.Execute("cat", []string{path})
+	output, err := lhns.ReadFileContent(path)
 	if err != nil {
 		return nil, fmt.Errorf("cannot find volume meta %v on host: %v", path, err)
 	}
@@ -867,10 +731,35 @@ func GetPodIP(pod *corev1.Pod) (string, error) {
 }
 
 func TrimFilesystem(volumeName string, encryptedDevice bool) error {
-	nsPath := iscsiutil.GetHostNamespacePath(HostProcPath)
-	nsExec, err := iscsiutil.NewNamespaceExecutor(nsPath)
+	var err error
+	defer func() {
+		err = errors.Wrapf(err, "failed to trim filesystem for Volume %v", volumeName)
+	}()
+
+	validMountpoint, err := getValidMountPoint(volumeName, lhtypes.HostProcDirectory, encryptedDevice)
 	if err != nil {
 		return err
+	}
+
+	namespaces := []lhtypes.Namespace{lhtypes.NamespaceMnt, lhtypes.NamespaceNet}
+	nsexec, err := lhns.NewNamespaceExecutor(lhtypes.ProcessNone, lhtypes.HostProcDirectory, namespaces)
+	if err != nil {
+		return err
+	}
+
+	_, err = nsexec.Execute(nil, lhtypes.BinaryFstrim, []string{validMountpoint}, time.Hour)
+	if err != nil {
+		return errors.Wrapf(err, "cannot find volume %v mount info on host", volumeName)
+	}
+
+	return nil
+}
+
+func getValidMountPoint(volumeName, procDir string, encryptedDevice bool) (string, error) {
+	procMountsPath := filepath.Join(procDir, "1", "mounts")
+	content, err := lhio.ReadFileContent(procMountsPath)
+	if err != nil {
+		return "", err
 	}
 
 	deviceDir := RegularDeviceDirectory
@@ -878,33 +767,32 @@ func TrimFilesystem(volumeName string, encryptedDevice bool) error {
 		deviceDir = EncryptedDeviceDirectory
 	}
 
-	mountOutput, err := nsExec.Execute("bash", []string{"-c", fmt.Sprintf("cat /proc/mounts | grep %s%s | awk '{print $2}'", deviceDir, volumeName)})
-	if err != nil {
-		return errors.Wrapf(err, "cannot find volume %v mount info on host", volumeName)
-	}
-
-	mountList := strings.Split(strings.TrimSpace(mountOutput), "\n")
-
-	var mountpoint string
-	for _, m := range mountList {
-		_, err = nsExec.Execute("stat", []string{m})
-		if err == nil {
-			mountpoint = m
-			break
+	var validMountpoint string
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
 		}
 
-		logrus.WithError(err).Warnf("Failed to get volume %v mount point %v info", volumeName, m)
-	}
-	if mountpoint == "" {
-		return fmt.Errorf("cannot find a valid mount point for volume %v", volumeName)
+		device := fields[0]
+		if !strings.HasPrefix(device, deviceDir+volumeName) {
+			continue
+		}
+
+		mountPoint := fields[1]
+		_, err = lhns.GetFileInfo(mountPoint)
+		if err == nil {
+			validMountpoint = mountPoint
+			break
+		}
 	}
 
-	_, err = nsExec.Execute("fstrim", []string{mountpoint})
-	if err != nil {
-		return errors.Wrapf(err, "cannot find volume %v mount info on host", volumeName)
+	if validMountpoint == "" {
+		return "", fmt.Errorf("failed to find valid mountpoint")
 	}
 
-	return nil
+	return validMountpoint, nil
 }
 
 // SortKeys accepts a map with string keys and returns a sorted slice of keys
@@ -980,4 +868,25 @@ func WaitForResourceDeletion(kubeClient *clientset.Clientset, name, namespace, r
 		time.Sleep(time.Duration(1) * time.Second)
 	}
 	return fmt.Errorf("foreground deletion of %s %s timed out", resource, name)
+}
+
+func GetDataEngineForDiskType(diskType longhorn.DiskType) longhorn.DataEngineType {
+	if diskType == longhorn.DiskTypeBlock {
+		return longhorn.DataEngineTypeV2
+	}
+	return longhorn.DataEngineTypeV1
+
+}
+
+// GetDataContentFromYAML unmarshals the data content YAML data into a map
+func GetDataContentFromYAML(configMapYAMLData []byte) (map[string]string, error) {
+	customizedDataMap := map[string]string{}
+
+	if err := yaml.Unmarshal(configMapYAMLData, &customizedDataMap); err != nil {
+		logrus.WithError(err).Errorf("Failed to unmarshal customized data content from yaml data %v, will give up using them", string(configMapYAMLData))
+		customizedDataMap = map[string]string{}
+		return nil, err
+	}
+
+	return customizedDataMap, nil
 }

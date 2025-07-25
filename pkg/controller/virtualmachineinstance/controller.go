@@ -7,7 +7,7 @@ import (
 	"github.com/harvester/harvester/pkg/builder"
 	"github.com/harvester/harvester/pkg/controller/master/virtualmachine"
 	ctlv1 "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1"
-	ctlcorev1 "github.com/rancher/wrangler/pkg/generated/controllers/core/v1"
+	ctlcorev1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/core/v1"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"

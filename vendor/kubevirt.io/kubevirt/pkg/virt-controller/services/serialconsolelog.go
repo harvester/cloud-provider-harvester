@@ -3,7 +3,7 @@ package services
 import (
 	"fmt"
 
-	"k8s.io/utils/pointer"
+	"kubevirt.io/kubevirt/pkg/pointer"
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -13,7 +13,7 @@ import (
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 )
 
-func generateSerialConsoleLogContainer(vmi *v1.VirtualMachineInstance, image string, config *virtconfig.ClusterConfig, virtLauncherLogVerbosity uint) *k8sv1.Container {
+func generateSerialConsoleLogContainer(vmi *v1.VirtualMachineInstance, image string, config *virtconfig.ClusterConfig, virtLauncherLogVerbosity uint, socketTimeout string) *k8sv1.Container {
 	const serialPort = 0
 	if isSerialConsoleLogEnabled(vmi, config) {
 		logFile := fmt.Sprintf("%s/%s/virt-serial%d-log", util.VirtPrivateDir, vmi.ObjectMeta.UID, serialPort)
@@ -25,7 +25,7 @@ func generateSerialConsoleLogContainer(vmi *v1.VirtualMachineInstance, image str
 			Image:           image,
 			ImagePullPolicy: k8sv1.PullIfNotPresent,
 			Command:         []string{"/usr/bin/virt-tail"},
-			Args:            []string{"--logfile", logFile},
+			Args:            []string{"--logfile", logFile, "--socket-timeout", socketTimeout},
 			VolumeMounts: []k8sv1.VolumeMount{
 				k8sv1.VolumeMount{
 					Name:      "private",
@@ -35,9 +35,9 @@ func generateSerialConsoleLogContainer(vmi *v1.VirtualMachineInstance, image str
 			},
 			Resources: resources,
 			SecurityContext: &k8sv1.SecurityContext{
-				RunAsUser:                pointer.Int64(util.NonRootUID),
-				RunAsNonRoot:             pointer.Bool(true),
-				AllowPrivilegeEscalation: pointer.Bool(false),
+				RunAsUser:                pointer.P(int64(util.NonRootUID)),
+				RunAsNonRoot:             pointer.P(true),
+				AllowPrivilegeEscalation: pointer.P(false),
 				Capabilities: &k8sv1.Capabilities{
 					Drop: []k8sv1.Capability{"ALL"},
 				},

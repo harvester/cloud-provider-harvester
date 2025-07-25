@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"kubevirt.io/kubevirt/pkg/util"
-
 	v1 "k8s.io/api/core/v1"
 
 	k6tv1 "kubevirt.io/api/core/v1"
@@ -54,21 +52,6 @@ func TSCFrequencyFromNode(node *v1.Node) (frequency int64, scalable bool, err er
 		return freq, scalable, err
 	}
 	return 0, false, nil
-}
-
-func TSCFrequencyFromPod(pod *v1.Pod) (frequency int64, err error) {
-	for key := range pod.Spec.NodeSelector {
-		if strings.HasPrefix(key, TSCFrequencySchedulingLabel+"-") {
-			freq, err := strconv.ParseInt(strings.TrimPrefix(key, TSCFrequencySchedulingLabel+"-"), 10, 64)
-			if err != nil {
-				return 0, fmt.Errorf("tsc frequency on node %v is not an int: %v", pod.Name, err)
-			} else if freq <= 0 {
-				return 0, fmt.Errorf("tsc frequency on node %v is invalid: expected a frequenchy bigger than 0, but got %v", pod.Name, freq)
-			}
-			return freq, err
-		}
-	}
-	return 0, nil
 }
 
 func TSCFrequenciesOnNode(node *v1.Node) (frequencies []int64) {
@@ -157,7 +140,7 @@ func GetTscFrequencyRequirement(vmi *k6tv1.VirtualMachineInstance) TscFrequencyR
 	if vmiHasInvTSCFeature(vmi) {
 		return newRequirement(RequiredForBoot, "VMI with invtsc CPU feature must have tsc frequency defined in order to boot")
 	}
-	if util.IsVmiUsingHyperVReenlightenment(vmi) {
+	if isVmiUsingHyperVReenlightenment(vmi) {
 		return newRequirement(RequiredForMigration, "HyperV Reenlightenment VMIs cannot migrate when TSC Frequency is not exposed on the cluster: guest timers might be inconsistent")
 	}
 
@@ -177,4 +160,15 @@ func vmiHasInvTSCFeature(vmi *k6tv1.VirtualMachineInstance) bool {
 		}
 	}
 	return false
+}
+
+func isVmiUsingHyperVReenlightenment(vmi *k6tv1.VirtualMachineInstance) bool {
+	if vmi == nil {
+		return false
+	}
+
+	domainFeatures := vmi.Spec.Domain.Features
+
+	return domainFeatures != nil && domainFeatures.Hyperv != nil && domainFeatures.Hyperv.Reenlightenment != nil &&
+		domainFeatures.Hyperv.Reenlightenment.Enabled != nil && *domainFeatures.Hyperv.Reenlightenment.Enabled
 }

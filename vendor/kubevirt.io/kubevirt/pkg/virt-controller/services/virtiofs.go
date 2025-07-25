@@ -5,11 +5,11 @@ import (
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/pointer"
+
 	v1 "kubevirt.io/api/core/v1"
 
 	"kubevirt.io/kubevirt/pkg/config"
-
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/util"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 	"kubevirt.io/kubevirt/pkg/virtiofs"
@@ -70,68 +70,6 @@ func resourcesForVirtioFSContainer(dedicatedCPUs bool, guaranteedQOS bool, confi
 
 }
 
-var privilegedId = int64(util.RootUser)
-var restrictedId = int64(util.NonRootUID)
-
-type securityProfile uint8
-
-const (
-	restricted securityProfile = iota
-	privileged
-)
-
-func isRestricted(profile securityProfile) bool {
-	return profile == restricted
-}
-
-func isPrivileged(profile securityProfile) bool {
-	return profile == privileged
-}
-
-func virtiofsCredential(profile securityProfile) *int64 {
-	credential := &restrictedId
-	if isPrivileged(profile) {
-		credential = &privilegedId
-	}
-	return credential
-}
-
-func virtiofsCapabilities(profile securityProfile) *k8sv1.Capabilities {
-	if isPrivileged(profile) {
-		return &k8sv1.Capabilities{
-			Add: []k8sv1.Capability{
-				"CHOWN",
-				"DAC_OVERRIDE",
-				"FOWNER",
-				"FSETID",
-				"SETGID",
-				"SETUID",
-				"MKNOD",
-				"SETFCAP",
-				"SYS_CHROOT",
-			},
-		}
-	}
-
-	return &k8sv1.Capabilities{
-		Drop: []k8sv1.Capability{
-			"ALL",
-		},
-	}
-}
-
-func securityContextVirtioFS(profile securityProfile) *k8sv1.SecurityContext {
-	credential := virtiofsCredential(profile)
-
-	return &k8sv1.SecurityContext{
-		RunAsUser:                credential,
-		RunAsGroup:               credential,
-		RunAsNonRoot:             pointer.Bool(isRestricted(profile)),
-		AllowPrivilegeEscalation: pointer.Bool(isPrivileged(profile)),
-		Capabilities:             virtiofsCapabilities(profile),
-	}
-}
-
 func isAutoMount(volume *v1.Volume) bool {
 	// The template service sets pod.Spec.AutomountServiceAccountToken as true
 	return volume.ServiceAccount != nil
@@ -157,18 +95,18 @@ func generateContainerFromVolume(volume *v1.Volume, image string, resources k8sv
 
 	socketPathArg := fmt.Sprintf("--socket-path=%s", virtiofs.VirtioFSSocketPath(volume.Name))
 	sourceArg := fmt.Sprintf("--shared-dir=%s", virtioFSMountPoint(volume))
-	args := []string{socketPathArg, sourceArg, "--cache=auto"}
 
-	securityProfile := restricted
-	sandbox := "none"
-	if virtiofs.RequiresRootPrivileges(volume) {
-		securityProfile = privileged
-		sandbox = "chroot"
-		args = append(args, "--xattr")
-	}
+	args := []string{socketPathArg, sourceArg, "--sandbox=none", "--cache=auto"}
 
-	sandboxArg := fmt.Sprintf("--sandbox=%s", sandbox)
-	args = append(args, sandboxArg)
+	// If some files cannot be migrated, let's allow the migration to finish.
+	// Mark these files as invalid, the guest will not be able to access any such files,
+	// receiving only errors
+	args = append(args, "--migration-on-error=guest-error")
+
+	// This mode look up its file references paths by reading the symlinks in /proc/self/fd,
+	// falling back to iterating through the shared directory (exhaustive search) to find those paths.
+	// This migration mode doesn't require any privileges.
+	args = append(args, "--migration-mode=find-paths")
 
 	volumeMounts := []k8sv1.VolumeMount{
 		// This is required to pass socket to compute
@@ -193,6 +131,16 @@ func generateContainerFromVolume(volume *v1.Volume, image string, resources k8sv
 		Args:            args,
 		VolumeMounts:    volumeMounts,
 		Resources:       resources,
-		SecurityContext: securityContextVirtioFS(securityProfile),
+		SecurityContext: &k8sv1.SecurityContext{
+			RunAsUser:                pointer.P(int64(util.NonRootUID)),
+			RunAsGroup:               pointer.P(int64(util.NonRootUID)),
+			RunAsNonRoot:             pointer.P(true),
+			AllowPrivilegeEscalation: pointer.P(false),
+			Capabilities: &k8sv1.Capabilities{
+				Drop: []k8sv1.Capability{
+					"ALL",
+				},
+			},
+		},
 	}
 }

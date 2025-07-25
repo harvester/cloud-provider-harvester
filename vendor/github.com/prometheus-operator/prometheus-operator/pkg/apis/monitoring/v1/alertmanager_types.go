@@ -183,9 +183,12 @@ type AlertmanagerSpec struct {
 	// InitContainers allows adding initContainers to the pod definition. Those can be used to e.g.
 	// fetch secrets for injection into the Alertmanager configuration from external sources. Any
 	// errors during the execution of an initContainer will lead to a restart of the Pod. More info: https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
-	// Using initContainers for any use case other then secret fetching is entirely outside the scope
-	// of what the maintainers will support and by doing so, you accept that this behaviour may break
-	// at any time without notice.
+	// InitContainers described here modify an operator
+	// generated init containers if they share the same name and modifications are
+	// done via a strategic merge patch. The current init container name is:
+	// `init-config-reloader`. Overriding init containers is entirely outside the
+	// scope of what the maintainers will support and by doing so, you accept that
+	// this behaviour may break at any time without notice.
 	InitContainers []v1.Container `json:"initContainers,omitempty"`
 	// Priority class assigned to the Pods
 	PriorityClassName string `json:"priorityClassName,omitempty"`
@@ -202,7 +205,8 @@ type AlertmanagerSpec struct {
 	// Timeout for cluster peering.
 	ClusterPeerTimeout GoDuration `json:"clusterPeerTimeout,omitempty"`
 	// Port name used for the pods and governing service.
-	// This defaults to web
+	// Defaults to `web`.
+	// +kubebuilder:default:="web"
 	PortName string `json:"portName,omitempty"`
 	// ForceEnableClusterMode ensures Alertmanager does not deactivate the cluster mode when running with a single replica.
 	// Use case is e.g. spanning an Alertmanager cluster across Kubernetes clusters with a single replica in each.
@@ -231,6 +235,10 @@ type AlertmanagerSpec struct {
 	// If defined, it takes precedence over the `configSecret` field.
 	// This field may change in future releases.
 	AlertmanagerConfiguration *AlertmanagerConfiguration `json:"alertmanagerConfiguration,omitempty"`
+	// AutomountServiceAccountToken indicates whether a service account token should be automatically mounted in the pod.
+	// If the service account has `automountServiceAccountToken: true`, set the field to `false` to opt out of automounting API credentials.
+	// +optional
+	AutomountServiceAccountToken *bool `json:"automountServiceAccountToken,omitempty"`
 }
 
 // AlertmanagerConfigMatcherStrategy defines the strategy used by AlertmanagerConfig objects to match alerts.
@@ -262,6 +270,10 @@ type AlertmanagerConfiguration struct {
 // AlertmanagerGlobalConfig configures parameters that are valid in all other configuration contexts.
 // See https://prometheus.io/docs/alerting/latest/configuration/#configuration-file
 type AlertmanagerGlobalConfig struct {
+	// Configures global SMTP parameters.
+	// +optional
+	SMTPConfig *GlobalSMTPConfig `json:"smtp,omitempty"`
+
 	// ResolveTimeout is the default value used by alertmanager if the alert does
 	// not include EndsAt, after this time passes it can declare the alert as resolved if it has not been updated.
 	// This has no impact on alerts from Prometheus, as they always include EndsAt.
@@ -269,6 +281,18 @@ type AlertmanagerGlobalConfig struct {
 
 	// HTTP client configuration.
 	HTTPConfig *HTTPConfig `json:"httpConfig,omitempty"`
+
+	// The default Slack API URL.
+	SlackAPIURL *v1.SecretKeySelector `json:"slackApiUrl,omitempty"`
+
+	// The default OpsGenie API URL.
+	OpsGenieAPIURL *v1.SecretKeySelector `json:"opsGenieApiUrl,omitempty"`
+
+	// The default OpsGenie API Key.
+	OpsGenieAPIKey *v1.SecretKeySelector `json:"opsGenieApiKey,omitempty"`
+
+	// The default Pagerduty URL.
+	PagerdutyURL *string `json:"pagerdutyUrl,omitempty"`
 }
 
 // AlertmanagerStatus is the most recent observed status of the Alertmanager cluster. Read-only.
@@ -297,10 +321,77 @@ type AlertmanagerStatus struct {
 	Conditions []Condition `json:"conditions,omitempty"`
 }
 
+func (a *Alertmanager) ExpectedReplicas() int {
+	if a.Spec.Replicas == nil {
+		return 1
+	}
+	return int(*a.Spec.Replicas)
+}
+
+func (a *Alertmanager) SetReplicas(i int)            { a.Status.Replicas = int32(i) }
+func (a *Alertmanager) SetUpdatedReplicas(i int)     { a.Status.UpdatedReplicas = int32(i) }
+func (a *Alertmanager) SetAvailableReplicas(i int)   { a.Status.AvailableReplicas = int32(i) }
+func (a *Alertmanager) SetUnavailableReplicas(i int) { a.Status.UnavailableReplicas = int32(i) }
+
 // AlertmanagerWebSpec defines the web command line flags when starting Alertmanager.
 // +k8s:openapi-gen=true
 type AlertmanagerWebSpec struct {
 	WebConfigFileFields `json:",inline"`
+	// Maximum number of GET requests processed concurrently. This corresponds to the
+	// Alertmanager's `--web.get-concurrency` flag.
+	// +optional
+	GetConcurrency *uint32 `json:"getConcurrency,omitempty"`
+	// Timeout for HTTP requests. This corresponds to the Alertmanager's
+	// `--web.timeout` flag.
+	// +optional
+	Timeout *uint32 `json:"timeout,omitempty"`
+}
+
+// GlobalSMTPConfig configures global SMTP parameters.
+// See https://prometheus.io/docs/alerting/latest/configuration/#configuration-file
+type GlobalSMTPConfig struct {
+	// The default SMTP From header field.
+	// +optional
+	From *string `json:"from,omitempty"`
+
+	// The default SMTP smarthost used for sending emails.
+	// +optional
+	SmartHost *HostPort `json:"smartHost,omitempty"`
+
+	// The default hostname to identify to the SMTP server.
+	// +optional
+	Hello *string `json:"hello,omitempty"`
+
+	// SMTP Auth using CRAM-MD5, LOGIN and PLAIN. If empty, Alertmanager doesn't authenticate to the SMTP server.
+	// +optional
+	AuthUsername *string `json:"authUsername,omitempty"`
+
+	// SMTP Auth using LOGIN and PLAIN.
+	// +optional
+	AuthPassword *v1.SecretKeySelector `json:"authPassword,omitempty"`
+
+	// SMTP Auth using PLAIN
+	// +optional
+	AuthIdentity *string `json:"authIdentity,omitempty"`
+
+	// SMTP Auth using CRAM-MD5.
+	// +optional
+	AuthSecret *v1.SecretKeySelector `json:"authSecret,omitempty"`
+
+	// The default SMTP TLS requirement.
+	// Note that Go does not support unencrypted connections to remote SMTP endpoints.
+	// +optional
+	RequireTLS *bool `json:"requireTLS,omitempty"`
+}
+
+// HostPort represents a "host:port" network address.
+type HostPort struct {
+	// Defines the host's address, it can be a DNS name or a literal IP address.
+	// +kubebuilder:validation:MinLength=1
+	Host string `json:"host"`
+	// Defines the host's port, it can be a literal port number or a port name.
+	// +kubebuilder:validation:MinLength=1
+	Port string `json:"port"`
 }
 
 // HTTPConfig defines a client HTTP configuration.
