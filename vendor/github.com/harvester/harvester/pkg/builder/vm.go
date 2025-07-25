@@ -150,7 +150,7 @@ func (v *VMBuilder) Memory(memory string) *VMBuilder {
 }
 
 func (v *VMBuilder) CPU(cores int) *VMBuilder {
-	v.VirtualMachine.Spec.Template.Spec.Domain.CPU.Cores = uint32(cores)
+	v.VirtualMachine.Spec.Template.Spec.Domain.CPU.Cores = uint32(cores) // nolint:gosec
 	if len(v.VirtualMachine.Spec.Template.Spec.Domain.Resources.Limits) == 0 {
 		v.VirtualMachine.Spec.Template.Spec.Domain.Resources.Limits = corev1.ResourceList{}
 	}
@@ -160,7 +160,7 @@ func (v *VMBuilder) CPU(cores int) *VMBuilder {
 
 func (v *VMBuilder) EvictionStrategy(liveMigrate bool) *VMBuilder {
 	if liveMigrate {
-		evictionStrategy := kubevirtv1.EvictionStrategyLiveMigrate
+		evictionStrategy := kubevirtv1.EvictionStrategyLiveMigrateIfPossible
 		v.VirtualMachine.Spec.Template.Spec.EvictionStrategy = &evictionStrategy
 	}
 	return v

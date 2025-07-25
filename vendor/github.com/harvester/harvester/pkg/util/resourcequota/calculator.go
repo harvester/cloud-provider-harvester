@@ -6,7 +6,7 @@ import (
 	"runtime"
 
 	v3 "github.com/rancher/rancher/pkg/apis/management.cattle.io/v3"
-	ctlv1 "github.com/rancher/wrangler/pkg/generated/controllers/core/v1"
+	ctlv1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/core/v1"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -15,34 +15,40 @@ import (
 	kubevirtservices "kubevirt.io/kubevirt/pkg/virt-controller/services"
 
 	ctlharvestercorev1 "github.com/harvester/harvester/pkg/generated/controllers/core/v1"
+	ctlharvesterv1 "github.com/harvester/harvester/pkg/generated/controllers/harvesterhci.io/v1beta1"
 	ctlkubevirtv1 "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1"
-	"github.com/harvester/harvester/pkg/indexeres"
+	"github.com/harvester/harvester/pkg/ref"
 	"github.com/harvester/harvester/pkg/util"
+	indexeresutil "github.com/harvester/harvester/pkg/util/indexeres"
 )
 
 var resourceQuotaConversion = map[string]string{
-	"limitsCpu":    "limits.cpu",
-	"limitsMemory": "limits.memory",
+	"limitsCpu":       string(corev1.ResourceLimitsCPU),
+	"limitsMemory":    string(corev1.ResourceLimitsMemory),
+	"requestsStorage": string(corev1.ResourceRequestsStorage),
 }
 
 type Calculator struct {
-	nsCache   ctlv1.NamespaceCache
-	podCache  ctlv1.PodCache
-	rqCache   ctlharvestercorev1.ResourceQuotaCache
-	vmimCache ctlkubevirtv1.VirtualMachineInstanceMigrationCache
+	nsCache      ctlv1.NamespaceCache
+	podCache     ctlv1.PodCache
+	rqCache      ctlharvestercorev1.ResourceQuotaCache
+	vmimCache    ctlkubevirtv1.VirtualMachineInstanceMigrationCache
+	settingCache ctlharvesterv1.SettingCache
 }
 
 func NewCalculator(
 	nsCache ctlv1.NamespaceCache,
 	podCache ctlv1.PodCache,
 	rqCache ctlharvestercorev1.ResourceQuotaCache,
-	vmimCache ctlkubevirtv1.VirtualMachineInstanceMigrationCache) *Calculator {
+	vmimCache ctlkubevirtv1.VirtualMachineInstanceMigrationCache,
+	settingCache ctlharvesterv1.SettingCache) *Calculator {
 
 	return &Calculator{
-		nsCache:   nsCache,
-		podCache:  podCache,
-		rqCache:   rqCache,
-		vmimCache: vmimCache,
+		nsCache:      nsCache,
+		podCache:     podCache,
+		rqCache:      rqCache,
+		vmimCache:    vmimCache,
+		settingCache: settingCache,
 	}
 }
 
@@ -87,17 +93,16 @@ func (c *Calculator) CheckIfVMCanStartByResourceQuota(vm *kubevirtv1.VirtualMach
 		return err
 	}
 	if nrq == nil {
-		logrus.Debugf("CheckIfVMCanStartByResourceQuota: skipping check, resource quota not found in the namespace %s", vm.Namespace)
+		logrus.Debugf("CheckIfVMCanStartByResourceQuota: resource quota is not found in the namespace %s, skip check", vm.Namespace)
 		return nil
 	}
 
 	// get resource quota limits from ResourceQuota
-	selector := labels.Set{util.LabelManagementDefaultResourceQuota: "true"}.AsSelector()
-	rqs, err := c.rqCache.List(vm.Namespace, selector)
+	rqs, err := c.getResourceQuota(vm)
 	if err != nil {
 		return err
 	} else if len(rqs) == 0 {
-		logrus.Debugf("CheckIfVMCanStartByResourceQuota: no found any default resource quota in the namespace %s", vm.Namespace)
+		logrus.Debugf("CheckIfVMCanStartByResourceQuota: default resource quota is not found in the namespace %s, skip check", vm.Namespace)
 		return nil
 	}
 
@@ -119,11 +124,20 @@ func (c *Calculator) getNamespaceResourceQuota(vm *kubevirtv1.VirtualMachine) (*
 		return nil, err
 	}
 
-	if resourceQuota.Limit.LimitsCPU == "" && resourceQuota.Limit.LimitsMemory == "" {
+	if resourceQuota.Limit.LimitsCPU == "" && resourceQuota.Limit.LimitsMemory == "" && resourceQuota.Limit.RequestsStorage == "" {
 		return nil, nil
 	}
 
 	return resourceQuota, nil
+}
+
+func (c *Calculator) getResourceQuota(vm *kubevirtv1.VirtualMachine) ([]*corev1.ResourceQuota, error) {
+	selector := labels.Set{util.LabelManagementDefaultResourceQuota: "true"}.AsSelector()
+	rqs, err := c.rqCache.List(vm.Namespace, selector)
+	if err != nil {
+		return nil, err
+	}
+	return rqs, nil
 }
 
 // containsEnoughResourceQuotaToStartVM checks if the VM can be started based on the namespace resource quota limits
@@ -132,7 +146,7 @@ func (c *Calculator) containsEnoughResourceQuotaToStartVM(
 	namespaceResourceQuota *v3.NamespaceResourceQuota,
 	rq *corev1.ResourceQuota) error {
 	// get running migrations' used resource
-	vmimsCPU, vmimsMem, err := c.getRunningVMIMResources(rq)
+	vmimsCPU, vmimsMem, _, err := c.getRunningVMIMResources(rq)
 	if err != nil {
 		return err
 	}
@@ -140,6 +154,7 @@ func (c *Calculator) containsEnoughResourceQuotaToStartVM(
 	usedCPU := rq.Status.Used.Name(corev1.ResourceLimitsCPU, resource.DecimalSI)
 	usedMem := rq.Status.Used.Name(corev1.ResourceLimitsMemory, resource.BinarySI)
 	// calculate vm actual used resource
+	// note: this calculation is not 100% accurate as the lifecycles of RQ and VMIM are different
 	usedCPU.Sub(vmimsCPU)
 	usedMem.Sub(vmimsMem)
 
@@ -155,7 +170,9 @@ func (c *Calculator) containsEnoughResourceQuotaToStartVM(
 	actualCPU := actualRq.Name(corev1.ResourceLimitsCPU, resource.DecimalSI)
 	actualMem := actualRq.Name(corev1.ResourceLimitsMemory, resource.BinarySI)
 
-	// check if vms actual used resource is less than namespace resource quota limits
+	logrus.Debugf("%s/%s CPU: used %v, vmim %v vm %v actual %v, memory: used %v, vmim %v vm %v actual %v", vm.Namespace, vm.Name, usedCPU.MilliValue(), vmimsCPU.MilliValue(), vmCPU.MilliValue(), actualCPU.MilliValue(), usedMem.Value(), vmimsMem.Value(), vmMem.Value(), actualMem.Value())
+
+	// check if remaining quotas on namespace are sufficient to run this VM
 	// if not, return insufficient resource error
 	if !actualCPU.IsZero() {
 		actualCPU.Sub(*usedCPU)
@@ -188,26 +205,126 @@ func (c *Calculator) calculateVMActualOverhead(vm *kubevirtv1.VirtualMachine) *r
 		},
 	}
 
-	memoryOverhead := kubevirtservices.GetMemoryOverhead(vmi, runtime.GOARCH, nil)
+	memoryOverhead := kubevirtservices.GetMemoryOverhead(vmi, runtime.GOARCH, util.GetAdditionalGuestMemoryOverheadRatioWithoutError(c.settingCache))
 	return &memoryOverhead
 }
 
-func (c *Calculator) getRunningVMIMResources(rq *corev1.ResourceQuota) (cpu, mem resource.Quantity, err error) {
-	vms, err := GetResourceListFromMigratingVMs(rq)
+func (c *Calculator) getRunningVMIMResources(rq *corev1.ResourceQuota) (cpu, mem, storage resource.Quantity, err error) {
+	return getVMIMResourcesFromRQAnnotation(rq)
+}
+
+func getVMIMResourcesFromRQAnnotation(rq *corev1.ResourceQuota) (cpu, mem, storage resource.Quantity, err error) {
+	vms, err := getResourceListFromMigratingVMs(rq)
 	if err != nil {
-		return cpu, mem, err
+		return cpu, mem, storage, err
 	}
 
 	for _, rl := range vms {
 		cpu.Add(*rl.Name(corev1.ResourceLimitsCPU, resource.DecimalSI))
 		mem.Add(*rl.Name(corev1.ResourceLimitsMemory, resource.BinarySI))
+		storage.Add(*rl.Name(corev1.ResourceRequestsStorage, resource.BinarySI))
 	}
 
 	return
 }
 
+// Get ResourceQuota annotations about vmim and convert them to
+func GetVMIMResourcesFromRQAnnotation(rq *corev1.ResourceQuota) (cpu, mem, storage resource.Quantity, err error) {
+	return getVMIMResourcesFromRQAnnotation(rq)
+}
+
+// Get Rancher NamespaceResourceQuota LimitsCPU and LimitsMemory
+func GetCPUMemoryLimitsFromRancherNamespaceResourceQuota(nrq *v3.NamespaceResourceQuota) (cpu, mem resource.Quantity, err error) {
+	if nrq.Limit.LimitsCPU == "" {
+		cpu = *resource.NewQuantity(0, resource.DecimalSI)
+	} else {
+		if cpu, err = resource.ParseQuantity(nrq.Limit.LimitsCPU); err != nil {
+			return
+		}
+	}
+
+	if nrq.Limit.LimitsMemory == "" {
+		mem = *resource.NewQuantity(0, resource.BinarySI)
+	} else {
+		if mem, err = resource.ParseQuantity(nrq.Limit.LimitsMemory); err != nil {
+			return
+		}
+	}
+	return
+}
+
 func (c *Calculator) getVMPods(namespace, vmName string) ([]*corev1.Pod, error) {
-	return c.podCache.GetByIndex(indexeres.PodByVMNameIndex, fmt.Sprintf("%s/%s", namespace, vmName))
+	return c.podCache.GetByIndex(indexeresutil.PodByVMNameIndex, ref.Construct(namespace, vmName))
+}
+
+func (c *Calculator) CheckStorageResourceQuota(vm *kubevirtv1.VirtualMachine, oldVM *kubevirtv1.VirtualMachine) error {
+	nrq, err := c.getNamespaceResourceQuota(vm)
+	if err != nil {
+		return err
+	} else if nrq == nil {
+		logrus.Debugf("CheckStorageResourceQuota: skipping check, resource quota not found in the namespace %s", vm.Namespace)
+		return nil
+	}
+
+	rqs, err := c.getResourceQuota(vm)
+	if err != nil {
+		return err
+	} else if len(rqs) == 0 {
+		logrus.Debugf("CheckStorageResourceQuota: not found any default resource quota in the namespace %s", vm.Namespace)
+		return nil
+	}
+
+	rq := rqs[0]
+
+	_, _, vmimsStorage, err := c.getRunningVMIMResources(rq)
+	if err != nil {
+		return err
+	}
+
+	usedStorage := rq.Status.Used.Name(corev1.ResourceRequestsStorage, resource.BinarySI)
+	usedStorage.Sub(vmimsStorage)
+
+	// Calculate the storage quantity of the VM.
+	vmStorage, err := calculateVMStorageQuantity(vm)
+	if err != nil {
+		return err
+	}
+
+	// Calculate the storage quantity of the old VM.
+	// Then compare both storage quantity to assess whether the namespace
+	// resource quota can be exceeded at all. This is only the case when the
+	// storage requirements of the new VM is greater than those of the old
+	// one.
+	if oldVM != nil {
+		oldVMStorage, err := calculateVMStorageQuantity(oldVM)
+		if err != nil {
+			return err
+		}
+		// If the storage quantity of the VM is smaller than the old
+		// one, then exit immediately because the namespace resource
+		// quota cannot be exceeded in this case.
+		if vmStorage.Cmp(oldVMStorage) != 1 {
+			return nil
+		}
+		// Use the difference of the storage quantities as only this value
+		// is decisive for the further assessment.
+		vmStorage.Sub(oldVMStorage)
+	}
+
+	actualRq, err := convertNamespaceResourceLimitToResourceList(&nrq.Limit)
+	if err != nil {
+		return err
+	}
+	actualStorage := actualRq.Name(corev1.ResourceRequestsStorage, resource.BinarySI)
+
+	if !actualStorage.IsZero() {
+		actualStorage.Sub(*usedStorage)
+		if actualStorage.Cmp(vmStorage) == -1 {
+			return storageInsufficientResourceError()
+		}
+	}
+
+	return nil
 }
 
 func convertNamespaceResourceLimitToResourceList(limit *v3.ResourceQuotaLimit) (corev1.ResourceList, error) {
@@ -242,6 +359,7 @@ func convertNamespaceResourceLimitToResourceList(limit *v3.ResourceQuotaLimit) (
 func CalculateScaleResourceQuotaWithVMI(
 	rq *corev1.ResourceQuota,
 	vmi *kubevirtv1.VirtualMachineInstance,
+	ratio *string,
 ) (needUpdate bool, toUpdate *corev1.ResourceQuota, rl corev1.ResourceList) {
 
 	vmiLimits := vmi.Spec.Domain.Resources.Limits
@@ -250,23 +368,17 @@ func CalculateScaleResourceQuotaWithVMI(
 	}
 
 	rl = corev1.ResourceList{}
-	currentCPULimit, cpuOK := rq.Spec.Hard[corev1.ResourceLimitsCPU]
-	if !vmiLimits.Cpu().IsZero() && cpuOK {
-		currentCPULimit.Add(vmiLimits[corev1.ResourceCPU])
-		rl[corev1.ResourceLimitsCPU] = vmiLimits[corev1.ResourceCPU]
 
-		rq.Spec.Hard[corev1.ResourceLimitsCPU] = currentCPULimit
+	_, cpuOK := rq.Spec.Hard[corev1.ResourceLimitsCPU]
+	if !vmiLimits.Cpu().IsZero() && cpuOK {
+		rl[corev1.ResourceLimitsCPU] = vmiLimits[corev1.ResourceCPU]
 	}
 
-	currentMemoryLimit, memOK := rq.Spec.Hard[corev1.ResourceLimitsMemory]
+	_, memOK := rq.Spec.Hard[corev1.ResourceLimitsMemory]
 	if !vmiLimits.Memory().IsZero() && memOK {
 		mem := vmiLimits[corev1.ResourceMemory]
-		mem.Add(kubevirtservices.GetMemoryOverhead(vmi, runtime.GOARCH, nil))
-
-		currentMemoryLimit.Add(mem)
+		mem.Add(kubevirtservices.GetMemoryOverhead(vmi, runtime.GOARCH, ratio))
 		rl[corev1.ResourceLimitsMemory] = mem
-
-		rq.Spec.Hard[corev1.ResourceLimitsMemory] = currentMemoryLimit
 	}
 
 	return true, rq, rl
@@ -300,8 +412,28 @@ func CalculateRestoreResourceQuotaWithVMI(
 	return true, rq
 }
 
+// If base is zero, delta is not added
+func CalculateNewResourceQuotaFromBaseDelta(rq *corev1.ResourceQuota, cpuBase, memBase, cpuDelta, memDelta resource.Quantity) (*corev1.ResourceQuota, bool) {
+	needUpdate := false
+	if !cpuBase.IsZero() {
+		cpuBase.Add(cpuDelta)
+		if !rq.Spec.Hard[corev1.ResourceLimitsCPU].Equal(cpuBase) {
+			needUpdate = true
+			rq.Spec.Hard[corev1.ResourceLimitsCPU] = cpuBase
+		}
+	}
+	if !memBase.IsZero() {
+		memBase.Add(memDelta)
+		if !rq.Spec.Hard[corev1.ResourceLimitsMemory].Equal(memBase) {
+			needUpdate = true
+			rq.Spec.Hard[corev1.ResourceLimitsMemory] = memBase
+		}
+	}
+	return rq, needUpdate
+}
+
 func checkResourceQuotaAndVMI(rq *corev1.ResourceQuota, limits corev1.ResourceList) bool {
-	if isEmptyQuota(rq) {
+	if isEmpty(rq) {
 		return false
 	}
 
@@ -311,7 +443,10 @@ func checkResourceQuotaAndVMI(rq *corev1.ResourceQuota, limits corev1.ResourceLi
 	return true
 }
 
-func isEmptyQuota(rq *corev1.ResourceQuota) bool {
+func isEmpty(rq *corev1.ResourceQuota) bool {
+	if rq == nil {
+		return true
+	}
 	hard := rq.Spec.Hard
 	if hard == nil ||
 		(hard.Name(corev1.ResourceLimitsCPU, resource.DecimalSI).IsZero() &&
@@ -319,4 +454,29 @@ func isEmptyQuota(rq *corev1.ResourceQuota) bool {
 		return true
 	}
 	return false
+}
+
+func IsEmptyResourceQuota(rq *corev1.ResourceQuota) bool {
+	return isEmpty(rq)
+}
+
+func calculateVMStorageQuantity(vm *kubevirtv1.VirtualMachine) (resource.Quantity, error) {
+	storage := *resource.NewQuantity(0, resource.BinarySI)
+
+	volumeClaimTemplates, ok := vm.Annotations[util.AnnotationVolumeClaimTemplates]
+	if !ok || volumeClaimTemplates == "" {
+		return storage, nil
+	}
+
+	var pvcs []*corev1.PersistentVolumeClaim
+	err := json.Unmarshal([]byte(volumeClaimTemplates), &pvcs)
+	if err != nil {
+		return storage, fmt.Errorf("failed to unmarshal the volumeClaimTemplates annotation: %w", err)
+	}
+
+	for _, pvc := range pvcs {
+		storage.Add(*pvc.Spec.Resources.Requests.Storage())
+	}
+
+	return storage, nil
 }

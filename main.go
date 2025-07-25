@@ -31,7 +31,7 @@ func main() {
 	harv.BoolVar(&ccm.DisableVMIController, "disable-vmi-controller", ccm.DisableVMIController,
 		"The disable-vmi-controller will disable sync topology to nodes and not affect the custom cluster.")
 
-	command := app.NewCloudControllerManagerCommand(ccmOptions, cloudInitializer, controllerInitializers, fss, wait.NeverStop)
+	command := app.NewCloudControllerManagerCommand(ccmOptions, cloudInitializer, controllerInitializers, map[string]string{}, fss, wait.NeverStop)
 
 	// Set static flags for which we know the values.
 	command.Flags().VisitAll(func(fl *pflag.Flag) {
