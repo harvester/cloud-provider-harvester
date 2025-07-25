@@ -10,7 +10,7 @@ import (
 	lbv1 "github.com/harvester/harvester-load-balancer/pkg/apis/loadbalancer.harvesterhci.io/v1beta1"
 	pkgctllb "github.com/harvester/harvester-load-balancer/pkg/controller/loadbalancer"
 	ctllbv1 "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io/v1beta1"
-	wranglecorev1 "github.com/rancher/wrangler/pkg/generated/controllers/core/v1"
+	wranglecorev1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/core/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

@@ -10,14 +10,15 @@ import (
 	catalogv1 "github.com/rancher/rancher/pkg/generated/controllers/catalog.cattle.io"
 	rancherv3 "github.com/rancher/rancher/pkg/generated/controllers/management.cattle.io"
 	provisioningv1 "github.com/rancher/rancher/pkg/generated/controllers/provisioning.cattle.io"
-	"github.com/rancher/wrangler/pkg/apply"
-	appsv1 "github.com/rancher/wrangler/pkg/generated/controllers/apps"
-	batchv1 "github.com/rancher/wrangler/pkg/generated/controllers/batch"
-	corev1 "github.com/rancher/wrangler/pkg/generated/controllers/core"
-	rbacv1 "github.com/rancher/wrangler/pkg/generated/controllers/rbac"
-	storagev1 "github.com/rancher/wrangler/pkg/generated/controllers/storage"
-	"github.com/rancher/wrangler/pkg/generic"
-	"github.com/rancher/wrangler/pkg/start"
+	rkev1 "github.com/rancher/rancher/pkg/generated/controllers/rke.cattle.io"
+	"github.com/rancher/wrangler/v3/pkg/apply"
+	appsv1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/apps"
+	batchv1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/batch"
+	corev1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/core"
+	rbacv1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/rbac"
+	storagev1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/storage"
+	"github.com/rancher/wrangler/v3/pkg/generic"
+	"github.com/rancher/wrangler/v3/pkg/start"
 	"github.com/sirupsen/logrus"
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -26,7 +27,10 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"github.com/harvester/harvester/pkg/generated/clientset/versioned/scheme"
-	"github.com/harvester/harvester/pkg/generated/controllers/cluster.x-k8s.io"
+	ctlharvesterappsv1 "github.com/harvester/harvester/pkg/generated/controllers/apps"
+	ctlharvbatchv1 "github.com/harvester/harvester/pkg/generated/controllers/batch"
+	ctlcdiv1 "github.com/harvester/harvester/pkg/generated/controllers/cdi.kubevirt.io"
+	cluster "github.com/harvester/harvester/pkg/generated/controllers/cluster.x-k8s.io"
 	ctlharvcorev1 "github.com/harvester/harvester/pkg/generated/controllers/core"
 	ctlharvesterv1 "github.com/harvester/harvester/pkg/generated/controllers/harvesterhci.io"
 	cniv1 "github.com/harvester/harvester/pkg/generated/controllers/k8s.cni.cncf.io"
@@ -38,6 +42,8 @@ import (
 	snapshotv1 "github.com/harvester/harvester/pkg/generated/controllers/snapshot.storage.k8s.io"
 	ctlharvstoragev1 "github.com/harvester/harvester/pkg/generated/controllers/storage.k8s.io"
 	"github.com/harvester/harvester/pkg/generated/controllers/upgrade.cattle.io"
+	ctlcdiuploadv1 "github.com/harvester/harvester/pkg/generated/controllers/upload.cdi.kubevirt.io"
+	whereaboutcniv1 "github.com/harvester/harvester/pkg/generated/controllers/whereabouts.cni.cncf.io"
 )
 
 type (
@@ -62,17 +68,21 @@ type Scaled struct {
 	VirtFactory              *kubevirt.Factory
 	HarvesterFactory         *ctlharvesterv1.Factory
 	HarvesterCoreFactory     *ctlharvcorev1.Factory
+	HarvesterBatchFactory    *ctlharvbatchv1.Factory
 	HarvesterStorageFactory  *ctlharvstoragev1.Factory
 	CoreFactory              *corev1.Factory
 	AppsFactory              *appsv1.Factory
 	BatchFactory             *batchv1.Factory
 	RbacFactory              *rbacv1.Factory
 	CniFactory               *cniv1.Factory
+	WhereaboutsCNIFactory    *whereaboutcniv1.Factory
 	LoggingFactory           *loggingv1.Factory
 	SnapshotFactory          *snapshotv1.Factory
 	StorageFactory           *storagev1.Factory
 	LonghornFactory          *longhornv1.Factory
 	RancherManagementFactory *rancherv3.Factory
+	CdiFactory               *ctlcdiv1.Factory
+	CdiUploadFactory         *ctlcdiuploadv1.Factory
 	starters                 []start.Starter
 
 	Management   *Management
@@ -84,29 +94,34 @@ type Management struct {
 	Apply             apply.Apply
 	ControllerFactory controller.SharedControllerFactory
 
-	VirtFactory              *kubevirt.Factory
-	HarvesterFactory         *ctlharvesterv1.Factory
-	HarvesterCoreFactory     *ctlharvcorev1.Factory
-	HarvesterStorageFactory  *ctlharvstoragev1.Factory
-	LoggingFactory           *loggingv1.Factory
-	CoreFactory              *corev1.Factory
-	CniFactory               *cniv1.Factory
-	AppsFactory              *appsv1.Factory
-	BatchFactory             *batchv1.Factory
-	RbacFactory              *rbacv1.Factory
-	StorageFactory           *storagev1.Factory
-	SnapshotFactory          *snapshotv1.Factory
-	LonghornFactory          *longhornv1.Factory
-	ProvisioningFactory      *provisioningv1.Factory
-	CatalogFactory           *catalogv1.Factory
-	RancherManagementFactory *rancherv3.Factory
-	MonitoringFactory        *monitoringv1.Factory
-	HelmFactory              *helmv1.Factory
-
-	NetworkingFactory *networking.Factory
-	UpgradeFactory    *upgrade.Factory
-	ClusterFactory    *cluster.Factory
-	NodeConfigFactory *ctlnodeharvester.Factory
+	VirtFactory               *kubevirt.Factory
+	HarvesterFactory          *ctlharvesterv1.Factory
+	HarvesterCoreFactory      *ctlharvcorev1.Factory
+	HarvesterBatchFactory     *ctlharvbatchv1.Factory
+	HarvesterStorageFactory   *ctlharvstoragev1.Factory
+	LoggingFactory            *loggingv1.Factory
+	CoreFactory               *corev1.Factory
+	CniFactory                *cniv1.Factory
+	WhereaboutsCNIFactory     *whereaboutcniv1.Factory
+	AppsFactory               *appsv1.Factory
+	BatchFactory              *batchv1.Factory
+	RbacFactory               *rbacv1.Factory
+	StorageFactory            *storagev1.Factory
+	SnapshotFactory           *snapshotv1.Factory
+	LonghornFactory           *longhornv1.Factory
+	ProvisioningFactory       *provisioningv1.Factory
+	CatalogFactory            *catalogv1.Factory
+	RancherManagementFactory  *rancherv3.Factory
+	MonitoringFactory         *monitoringv1.Factory
+	HelmFactory               *helmv1.Factory
+	ControllerRevisionFactory *ctlharvesterappsv1.Factory
+	NetworkingFactory         *networking.Factory
+	UpgradeFactory            *upgrade.Factory
+	ClusterFactory            *cluster.Factory
+	NodeConfigFactory         *ctlnodeharvester.Factory
+	RKEFactory                *rkev1.Factory
+	CdiFactory                *ctlcdiv1.Factory
+	CdiUploadFactory          *ctlcdiuploadv1.Factory
 
 	ClientSet  *kubernetes.Clientset
 	RestConfig *rest.Config
@@ -139,6 +154,13 @@ func SetupScaled(ctx context.Context, restConfig *rest.Config, opts *generic.Fac
 	}
 	scaled.HarvesterCoreFactory = harvesterCoreFactory
 	scaled.starters = append(scaled.starters, harvesterCoreFactory)
+
+	harvesterBatchFactory, err := ctlharvbatchv1.NewFactoryFromConfigWithOptions(restConfig, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	scaled.HarvesterBatchFactory = harvesterBatchFactory
+	scaled.starters = append(scaled.starters, harvesterBatchFactory)
 
 	harvesterStorageFactory, err := ctlharvstoragev1.NewFactoryFromConfigWithOptions(restConfig, opts)
 	if err != nil {
@@ -182,6 +204,13 @@ func SetupScaled(ctx context.Context, restConfig *rest.Config, opts *generic.Fac
 	scaled.CniFactory = cni
 	scaled.starters = append(scaled.starters, cni)
 
+	whereaboutscni, err := whereaboutcniv1.NewFactoryFromConfigWithOptions(restConfig, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	scaled.WhereaboutsCNIFactory = whereaboutscni
+	scaled.starters = append(scaled.starters, whereaboutscni)
+
 	logging, err := loggingv1.NewFactoryFromConfigWithOptions(restConfig, opts)
 	if err != nil {
 		return nil, nil, err
@@ -216,6 +245,20 @@ func SetupScaled(ctx context.Context, restConfig *rest.Config, opts *generic.Fac
 	}
 	scaled.RancherManagementFactory = rancher
 	scaled.starters = append(scaled.starters, rancher)
+
+	cdi, err := ctlcdiv1.NewFactoryFromConfigWithOptions(restConfig, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	scaled.CdiFactory = cdi
+	scaled.starters = append(scaled.starters, cdi)
+
+	cdiupload, err := ctlcdiuploadv1.NewFactoryFromConfigWithOptions(restConfig, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	scaled.CdiUploadFactory = cdiupload
+	scaled.starters = append(scaled.starters, cdiupload)
 
 	scaled.Management, err = setupManagement(ctx, restConfig, opts)
 	if err != nil {
@@ -257,6 +300,13 @@ func setupManagement(ctx context.Context, restConfig *rest.Config, opts *generic
 	management.HarvesterCoreFactory = harvCore
 	management.starters = append(management.starters, harvCore)
 
+	harvBatch, err := ctlharvbatchv1.NewFactoryFromConfigWithOptions(restConfig, opts)
+	if err != nil {
+		return nil, err
+	}
+	management.HarvesterBatchFactory = harvBatch
+	management.starters = append(management.starters, harvBatch)
+
 	harvStorage, err := ctlharvstoragev1.NewFactoryFromConfigWithOptions(restConfig, opts)
 	if err != nil {
 		return nil, err
@@ -277,6 +327,13 @@ func setupManagement(ctx context.Context, restConfig *rest.Config, opts *generic
 	}
 	management.CniFactory = cni
 	management.starters = append(management.starters, cni)
+
+	whereaboutscni, err := whereaboutcniv1.NewFactoryFromConfigWithOptions(restConfig, opts)
+	if err != nil {
+		return nil, err
+	}
+	management.WhereaboutsCNIFactory = whereaboutscni
+	management.starters = append(management.starters, whereaboutscni)
 
 	apps, err := appsv1.NewFactoryFromConfigWithOptions(restConfig, opts)
 	if err != nil {
@@ -341,7 +398,7 @@ func setupManagement(ctx context.Context, restConfig *rest.Config, opts *generic
 	management.CatalogFactory = catalog
 	management.starters = append(management.starters, catalog)
 
-	helm, err := helmv1.NewFactoryFromConfigWithOptions(restConfig, opts)
+	helm, err := helmv1.NewFactoryFromConfigWithOptions(restConfig, (*helmv1.FactoryOptions)(opts))
 	if err != nil {
 		return nil, err
 	}
@@ -383,18 +440,46 @@ func setupManagement(ctx context.Context, restConfig *rest.Config, opts *generic
 	management.MonitoringFactory = monitoring
 	management.starters = append(management.starters, monitoring)
 
-	nodeconfig, err := ctlnodeharvester.NewFactoryFromConfigWithOptions(restConfig, opts)
+	nodeconfig, err := ctlnodeharvester.NewFactoryFromConfigWithOptions(restConfig, (*ctlnodeharvester.FactoryOptions)(opts))
 	if err != nil {
 		return nil, err
 	}
 	management.NodeConfigFactory = nodeconfig
 	management.starters = append(management.starters, nodeconfig)
 
+	rke, err := rkev1.NewFactoryFromConfigWithOptions(restConfig, opts)
+	if err != nil {
+		return nil, err
+	}
+	management.RKEFactory = rke
+	management.starters = append(management.starters, rke)
+
 	management.RestConfig = restConfig
 	management.ClientSet, err = kubernetes.NewForConfig(restConfig)
 	if err != nil {
 		return nil, err
 	}
+
+	controllerRevision, err := ctlharvesterappsv1.NewFactoryFromConfigWithOptions(restConfig, opts)
+	if err != nil {
+		return nil, err
+	}
+	management.ControllerRevisionFactory = controllerRevision
+	management.starters = append(management.starters, controllerRevision)
+
+	cdi, err := ctlcdiv1.NewFactoryFromConfigWithOptions(restConfig, opts)
+	if err != nil {
+		return nil, err
+	}
+	management.CdiFactory = cdi
+	management.starters = append(management.starters, cdi)
+
+	cdiupload, err := ctlcdiuploadv1.NewFactoryFromConfigWithOptions(restConfig, opts)
+	if err != nil {
+		return nil, err
+	}
+	management.CdiUploadFactory = cdiupload
+	management.starters = append(management.starters, cdiupload)
 
 	return management, nil
 }
