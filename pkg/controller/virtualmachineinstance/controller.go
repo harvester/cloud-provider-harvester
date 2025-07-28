@@ -19,7 +19,8 @@ import (
 )
 
 const (
-	vmiControllerName = "harvester-cloudprovider-resync-topology"
+	vmiControllerName          = "harvester-cloudprovider-resync-topology"
+	externallyManagedNodeLabel = "harvesterhci.io/externally-managed-node"
 )
 
 // Register the controller is helping to re-sync harvester node topology labels to guest cluster nodes.
@@ -72,6 +73,15 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 			"namespace": vmi.Namespace,
 			"name":      vmi.Name,
 		}).Info("skip processing virtual machine instance")
+		return vmi, nil
+	}
+
+	// Skip processing if the external-managed-node label is present
+	if _, exists := vmi.Labels[externallyManagedNodeLabel]; exists {
+		logrus.WithFields(logrus.Fields{
+			"namespace": vmi.Namespace,
+			"name":      vmi.Name,
+		}).Info("skip processing virtual machine instance due to externally-managed-node label")
 		return vmi, nil
 	}
 
