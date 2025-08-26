@@ -1,0 +1,44 @@
+version: 2
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - govet
+    - gosec
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - prealloc
+  formatters:
+    enable:
+      - gofmt
+  exclude-files:
+    - /zz_generated_
+  exclude-dirs:
+    - generated
+  exclusions:
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - staticcheck
+        text: "QF1003:" # could use tagged switch on errCode (staticcheck)
+      - linters:
+          - staticcheck
+        text: "QF1007:" # could merge conditional assignment into variable declaration (staticcheck)
+      - linters:
+          - staticcheck
+        text: "QF1008:" # could remove embedded field from selector (staticcheck)
+      - linters:
+          - staticcheck
+        text: "SA1019:" # function is deprecated (staticcheck)
+      - linters:
+          - staticcheck
+        text: "QF1012:" # Use fmt.Fprint(...) instead of Write([]byte(fmt.Sprint(...)))
+run:
+  timeout: 5m
+  tests: true
