@@ -1997,7 +1997,7 @@ k8s.io/kube-openapi/pkg/validation/strfmt/bson
 # k8s.io/kubectl v0.32.2 => k8s.io/kubectl v0.31.5
 ## explicit; go 1.22.0
 k8s.io/kubectl/pkg/cmd/util/podcmd
-# k8s.io/kubernetes v1.32.2 => k8s.io/kubernetes v1.31.6
+# k8s.io/kubernetes v1.32.2 => k8s.io/kubernetes v1.31.12
 ## explicit; go 1.22.0
 k8s.io/kubernetes/pkg/apis/rbac
 k8s.io/kubernetes/pkg/apis/rbac/v1
@@ -2331,7 +2331,7 @@ sigs.k8s.io/yaml/goyaml.v2
 # k8s.io/kube-scheduler => k8s.io/kube-scheduler v0.31.5
 # k8s.io/kubectl => k8s.io/kubectl v0.31.5
 # k8s.io/kubelet => k8s.io/kubelet v0.31.5
-# k8s.io/kubernetes => k8s.io/kubernetes v1.31.6
+# k8s.io/kubernetes => k8s.io/kubernetes v1.31.12
 # k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.31.5
 # k8s.io/metrics => k8s.io/metrics v0.31.5
 # k8s.io/mount-utils => k8s.io/mount-utils v0.31.5
