@@ -23,6 +23,9 @@ const (
 	retryTimes    = 10
 	retryInterval = time.Second
 
+	serviceRetryTimes    = 3
+	serviceRetryInterval = 200 * time.Millisecond
+
 	serviceNamespaceKey = prefix + "serviceNamespace"
 	serviceNameKey      = prefix + "serviceName"
 	clusterNameKey      = prefix + "cluster"
@@ -254,6 +257,37 @@ func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.
 	return lb
 }
 
+// only retry when conflict happens
+func (l *LoadBalancerManager) retryUpdateService(serviceType, namespace, name, ip, primaryLabel string, updateServiceObject func(serviceCopy *v1.Service, ip, primaryLabel string)) error {
+	var err error
+	var newSvc *v1.Service
+	for i := 0; i < serviceRetryTimes; i++ {
+		newSvc, err = l.localSvcCache.Get(namespace, name)
+		if err != nil {
+			return fmt.Errorf("failed to get %s service %s/%s to update ip %s, error: %w", serviceType, namespace, name, ip, err)
+		}
+
+		serviceCopy := newSvc.DeepCopy()
+		updateServiceObject(serviceCopy, ip, primaryLabel)
+		_, err = l.localSvcClient.Update(serviceCopy)
+		if err == nil {
+			return nil
+		}
+		if !errors.IsConflict(err) {
+			return fmt.Errorf("failed to update %s service %s/%s with ip %s, error: %w", serviceType, namespace, name, ip, err)
+		}
+		if i < serviceRetryTimes-1 {
+			time.Sleep(serviceRetryInterval)
+		}
+	}
+
+	return fmt.Errorf("failed to update %s service %s/%s with ip %s after retry, last error: %w", serviceType, namespace, name, ip, err)
+}
+
+func isPrimaryServiceUpdatedWithIP(service *v1.Service, lbAddress, ip string) bool {
+	return service.Annotations != nil && service.Annotations[KeyKubevipLoadBalancerIP] == ip && lbAddress == ip && service.Labels != nil && service.Labels[KeyPrimaryService] == ""
+}
+
 func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, service *v1.Service) error {
 	object, ip, err := waitForIP(func() (runtime.Object, string, error) {
 		lb, err := l.lbClient.Get(l.namespace, lbName, metav1.GetOptions{})
@@ -271,50 +305,50 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 	}
 
 	lb := object.(*lbv1.LoadBalancer)
-	if service.Annotations != nil && service.Annotations[KeyKubevipLoadBalancerIP] == ip && lb.Status.Address == ip &&
-		service.Labels != nil && service.Labels[KeyPrimaryService] == "" {
+	if isPrimaryServiceUpdatedWithIP(service, lb.Status.Address, ip) {
 		return nil
 	}
 
-	serviceCopy := service.DeepCopy()
-	if serviceCopy.Labels != nil && serviceCopy.Labels[KeyPrimaryService] != "" {
-		serviceCopy.Labels[KeyPrimaryService] = ""
-	}
-	if serviceCopy.Annotations == nil {
-		serviceCopy.Annotations = make(map[string]string)
-	}
-	serviceCopy.Annotations[KeyKubevipLoadBalancerIP] = ip
-	if _, err := l.localSvcClient.Update(serviceCopy); err != nil {
-		return err
+	updatePrimaryServiceObject := func(serviceCopy *v1.Service, ip, primaryLabel string) {
+		if serviceCopy.Labels != nil && serviceCopy.Labels[KeyPrimaryService] != "" {
+			serviceCopy.Labels[KeyPrimaryService] = ""
+		}
+		if serviceCopy.Annotations == nil {
+			serviceCopy.Annotations = make(map[string]string)
+		}
+		serviceCopy.Annotations[KeyKubevipLoadBalancerIP] = ip
 	}
 
-	return nil
+	// the above waitForIP takes time, it has high chance to hit the `IsConflict` error like
+	// "Operation cannot be fulfilled on services \"lb2\": the object has been modified; please apply your changes to the latest version and try again"
+	return l.retryUpdateService("primary", service.Namespace, service.Name, ip, "", updatePrimaryServiceObject)
+}
+
+func isSecondaryServiceUpdatedWithPrimary(secondary *v1.Service, ip, labelValue string) bool {
+	return secondary.Annotations != nil && secondary.Annotations[KeyKubevipLoadBalancerIP] == ip && secondary.Annotations[KeyIPAM] == "" && secondary.Labels != nil && secondary.Labels[KeyPrimaryService] == labelValue
 }
 
 func (l *LoadBalancerManager) updateSecondaryServiceLoadBalancerIP(ip string, primary, secondary *v1.Service) error {
 	labelValue := primaryServiceLabelValue(primary)
-	if secondary.Annotations != nil && secondary.Annotations[KeyKubevipLoadBalancerIP] == ip &&
-		secondary.Annotations[KeyIPAM] == "" && secondary.Labels != nil && secondary.Labels[KeyPrimaryService] == labelValue {
+	if isSecondaryServiceUpdatedWithPrimary(secondary, ip, labelValue) {
 		return nil
 	}
 
-	secondaryCopy := secondary.DeepCopy()
-	if secondaryCopy.Labels == nil {
-		secondaryCopy.Labels = make(map[string]string)
-	}
-	if secondaryCopy.Annotations == nil {
-		secondaryCopy.Annotations = make(map[string]string)
-	}
-	// add a label for easy filtering
-	secondaryCopy.Labels[KeyPrimaryService] = labelValue
-	// update the annotations and kube-vip will update the service status load balancer
-	secondaryCopy.Annotations[KeyKubevipLoadBalancerIP] = ip
-	delete(secondaryCopy.Annotations, KeyIPAM)
-	if _, err := l.localSvcClient.Update(secondaryCopy); err != nil {
-		return err
+	updateSecondaryServiceObject := func(secondaryCopy *v1.Service, ip, primaryLabel string) {
+		if secondaryCopy.Labels == nil {
+			secondaryCopy.Labels = make(map[string]string)
+		}
+		if secondaryCopy.Annotations == nil {
+			secondaryCopy.Annotations = make(map[string]string)
+		}
+		// add a label for easy filtering
+		secondaryCopy.Labels[KeyPrimaryService] = primaryLabel
+		// update the annotations and kube-vip will update the service status load balancer
+		secondaryCopy.Annotations[KeyKubevipLoadBalancerIP] = ip
+		delete(secondaryCopy.Annotations, KeyIPAM)
 	}
 
-	return nil
+	return l.retryUpdateService("secondary", secondary.Namespace, secondary.Name, ip, labelValue, updateSecondaryServiceObject)
 }
 
 func (l *LoadBalancerManager) deleteLoadBalancer(clusterName string, service *v1.Service) error {
