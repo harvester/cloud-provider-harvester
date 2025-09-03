@@ -361,9 +361,13 @@ func (l *LoadBalancerManager) deleteLoadBalancer(clusterName string, service *v1
 }
 
 func waitForIP(callback func() (runtime.Object, string, error)) (runtime.Object, string, error) {
-	var err error
+	var (
+		err    error
+		object runtime.Object
+		ip     string
+	)
 	for i := 0; i < retryTimes; i++ {
-		object, ip, err := callback()
+		object, ip, err = callback()
 		if err == nil {
 			return object, ip, nil
 		}
