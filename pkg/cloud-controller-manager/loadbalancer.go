@@ -17,14 +17,12 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/client-go/util/retry"
 )
 
 const (
 	retryTimes    = 10
 	retryInterval = time.Second
-
-	serviceRetryTimes    = 3
-	serviceRetryInterval = 200 * time.Millisecond
 
 	serviceNamespaceKey = prefix + "serviceNamespace"
 	serviceNameKey      = prefix + "serviceName"
@@ -259,29 +257,22 @@ func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.
 
 // only retry when conflict happens
 func (l *LoadBalancerManager) retryUpdateService(serviceType, namespace, name, ip, primaryLabel string, updateServiceObject func(serviceCopy *v1.Service, ip, primaryLabel string)) error {
-	var err error
-	var newSvc *v1.Service
-	for i := 0; i < serviceRetryTimes; i++ {
-		newSvc, err = l.localSvcCache.Get(namespace, name)
+	retryFunc := func() error {
+		newService, err := l.localSvcCache.Get(namespace, name)
 		if err != nil {
 			return fmt.Errorf("failed to get %s service %s/%s to update ip %s, error: %w", serviceType, namespace, name, ip, err)
 		}
-
-		serviceCopy := newSvc.DeepCopy()
+		serviceCopy := newService.DeepCopy()
 		updateServiceObject(serviceCopy, ip, primaryLabel)
 		_, err = l.localSvcClient.Update(serviceCopy)
-		if err == nil {
-			return nil
-		}
-		if !errors.IsConflict(err) {
-			return fmt.Errorf("failed to update %s service %s/%s with ip %s, error: %w", serviceType, namespace, name, ip, err)
-		}
-		if i < serviceRetryTimes-1 {
-			time.Sleep(serviceRetryInterval)
-		}
+		return err
 	}
 
-	return fmt.Errorf("failed to update %s service %s/%s with ip %s after retry, last error: %w", serviceType, namespace, name, ip, err)
+	err := retry.RetryOnConflict(retry.DefaultBackoff, retryFunc)
+	if err != nil {
+		return fmt.Errorf("failed to update %s service %s/%s with ip %s after retry, last error: %w", serviceType, namespace, name, ip, err)
+	}
+	return nil
 }
 
 func isPrimaryServiceUpdatedWithIP(service *v1.Service, lbAddress, ip string) bool {
