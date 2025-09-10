@@ -3,70 +3,70 @@ module github.com/harvester/harvester-cloud-provider
 go 1.24.5
 
 replace (
-	github.com/google/cel-go => github.com/google/cel-go v0.23.2
+	github.com/google/cel-go => github.com/google/cel-go v0.26.1
 
 	github.com/openshift/api => github.com/openshift/api v0.0.0-20191219222812-2987a591a72c
 	github.com/openshift/client-go => github.com/openshift/client-go v0.0.0-20200521150516-05eb9880269c
-	github.com/operator-framework/operator-lifecycle-manager => github.com/operator-framework/operator-lifecycle-manager v0.0.0-20190128024246-5eb7ae5bdb7a
+	github.com/operator-framework/operator-lifecycle-manager => github.com/operator-framework/operator-lifecycle-manager v0.35.0
 
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring => github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.68.0
-	github.com/rancher/lasso => github.com/rancher/lasso v0.0.0-20241202185148-04649f379358
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring => github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.85.0
+	github.com/rancher/lasso => github.com/rancher/lasso v0.2.4
 
-	github.com/rancher/rancher => github.com/rancher/rancher v0.0.0-20240919204204-3da2ae0cabd1
+	github.com/rancher/rancher => github.com/rancher/rancher v0.63.1
 	github.com/rancher/rancher/pkg/apis => github.com/rancher/rancher/pkg/apis v0.0.0-20240919204204-3da2ae0cabd1
 	github.com/rancher/rancher/pkg/client => github.com/rancher/rancher/pkg/client v0.0.0-20240919204204-3da2ae0cabd1
 
-	k8s.io/api => k8s.io/api v0.31.5
-	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.31.5
-	k8s.io/apimachinery => k8s.io/apimachinery v0.31.5
-	k8s.io/apiserver => k8s.io/apiserver v0.31.5
-	k8s.io/cli-runtime => k8s.io/cli-runtime v0.31.5
-	k8s.io/client-go => k8s.io/client-go v0.31.5
-	k8s.io/cloud-provider => k8s.io/cloud-provider v0.31.5
-	k8s.io/cluster-bootstrap => k8s.io/cluster-bootstrap v0.31.5
-	k8s.io/code-generator => k8s.io/code-generator v0.31.5
-	k8s.io/component-base => k8s.io/component-base v0.31.5
-	k8s.io/component-helpers => k8s.io/component-helpers v0.31.5
-	k8s.io/controller-manager => k8s.io/controller-manager v0.31.5
-	k8s.io/cri-api => k8s.io/cri-api v0.31.5
-	k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.31.5
-	k8s.io/kms => k8s.io/kms v0.31.5
-	k8s.io/kube-aggregator => k8s.io/kube-aggregator v0.31.5
-	k8s.io/kube-controller-manager => k8s.io/kube-controller-manager v0.31.5
+	k8s.io/api => k8s.io/api v0.34.1
+	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.34.1
+	k8s.io/apimachinery => k8s.io/apimachinery v0.34.1
+	k8s.io/apiserver => k8s.io/apiserver v0.34.1
+	k8s.io/cli-runtime => k8s.io/cli-runtime v0.34.1
+	k8s.io/client-go => k8s.io/client-go v0.34.1
+	k8s.io/cloud-provider => k8s.io/cloud-provider v0.34.1
+	k8s.io/cluster-bootstrap => k8s.io/cluster-bootstrap v0.34.1
+	k8s.io/code-generator => k8s.io/code-generator v0.34.1
+	k8s.io/component-base => k8s.io/component-base v0.34.1
+	k8s.io/component-helpers => k8s.io/component-helpers v0.34.1
+	k8s.io/controller-manager => k8s.io/controller-manager v0.34.1
+	k8s.io/cri-api => k8s.io/cri-api v0.34.1
+	k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.34.1
+	k8s.io/kms => k8s.io/kms v0.34.1
+	k8s.io/kube-aggregator => k8s.io/kube-aggregator v0.34.1
+	k8s.io/kube-controller-manager => k8s.io/kube-controller-manager v0.34.1
 	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340
-	k8s.io/kube-scheduler => k8s.io/kube-scheduler v0.31.5
-	k8s.io/kubectl => k8s.io/kubectl v0.31.5
-	k8s.io/kubelet => k8s.io/kubelet v0.31.5
-	k8s.io/kubernetes => k8s.io/kubernetes v1.31.12
+	k8s.io/kube-scheduler => k8s.io/kube-scheduler v0.34.1
+	k8s.io/kubectl => k8s.io/kubectl v0.34.1
+	k8s.io/kubelet => k8s.io/kubelet v0.34.1
+	k8s.io/kubernetes => k8s.io/kubernetes v1.34.1
 	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.31.5
-	k8s.io/metrics => k8s.io/metrics v0.31.5
-	k8s.io/mount-utils => k8s.io/mount-utils v0.31.5
-	k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.31.5
-	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.31.5
+	k8s.io/metrics => k8s.io/metrics v0.34.1
+	k8s.io/mount-utils => k8s.io/mount-utils v0.34.1
+	k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.34.1
+	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.34.1
 
-	kubevirt.io/api => kubevirt.io/api v1.5.0
-	kubevirt.io/client-go => kubevirt.io/client-go v1.5.0
-	kubevirt.io/kubevirt => kubevirt.io/kubevirt v1.5.0
+	kubevirt.io/api => kubevirt.io/api v1.6.0
+	kubevirt.io/client-go => kubevirt.io/client-go v1.6.0
+	kubevirt.io/kubevirt => kubevirt.io/kubevirt v1.6.0
 
-	sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.6.8
-	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
+	sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.11.1
+	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.22.1
 	sigs.k8s.io/structured-merge-diff => sigs.k8s.io/structured-merge-diff v0.0.0-20190302045857-e85c7b244fd2
 )
 
 require (
-	github.com/harvester/harvester v1.5.0
-	github.com/harvester/harvester-load-balancer v0.2.0-rc2
+	github.com/harvester/harvester v1.6.0
+	github.com/harvester/harvester-load-balancer v0.4.4
 	github.com/rancher/wrangler/v3 v3.2.2
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/pflag v1.0.6
-	k8s.io/api v0.33.1
-	k8s.io/apimachinery v0.33.1
+	k8s.io/api v0.34.1
+	k8s.io/apimachinery v0.34.1
 	k8s.io/client-go v12.0.0+incompatible
-	k8s.io/cloud-provider v0.31.5
-	k8s.io/component-base v0.33.1
+	k8s.io/cloud-provider v0.34.1
+	k8s.io/component-base v0.34.1
 	k8s.io/klog/v2 v2.130.1
-	kubevirt.io/api v1.5.0
-	kubevirt.io/client-go v1.5.0
+	kubevirt.io/api v1.6.0
+	kubevirt.io/client-go v1.6.0
 )
 
 require (
