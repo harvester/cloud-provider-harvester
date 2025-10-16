@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * Copyright 2024 Red Hat, Inc.
+ * Copyright The KubeVirt Authors.
  *
  */
 
@@ -26,7 +26,6 @@ import (
 )
 
 type clusterConfigChecker interface {
-	IsSlirpInterfaceEnabled() bool
 	IsBridgeInterfaceOnPodNetworkEnabled() bool
 	MacvtapEnabled() bool
 	PasstEnabled() bool
@@ -54,7 +53,6 @@ func (v Validator) Validate() []metav1.StatusCause {
 	causes = append(causes, validateMultusNetworkSource(v.field, v.vmiSpec)...)
 	causes = append(causes, validateInterfaceStateValue(v.field, v.vmiSpec)...)
 	causes = append(causes, validateInterfaceBinding(v.field, v.vmiSpec, v.configChecker)...)
-	causes = append(causes, validateSlirpBinding(v.field, v.vmiSpec, v.configChecker)...)
 	causes = append(causes, validateNetworkNameUnique(v.field, v.vmiSpec)...)
 	causes = append(causes, validateNetworksAssignedToInterfaces(v.field, v.vmiSpec)...)
 	causes = append(causes, validateInterfaceNameUnique(v.field, v.vmiSpec)...)

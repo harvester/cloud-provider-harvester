@@ -157,6 +157,9 @@ func (c *Collection) schemasForSubject(access *accesscontrol.AccessSet) (*types.
 		if verbAccess.AnyVerb("create") {
 			s.CollectionMethods = append(s.CollectionMethods, allowed(http.MethodPost))
 		}
+		if verbAccess.AnyVerb("patch") {
+			s.ResourceMethods = append(s.ResourceMethods, allowed(http.MethodPatch))
+		}
 
 		if len(s.CollectionMethods) == 0 && len(s.ResourceMethods) == 0 {
 			continue
@@ -167,9 +170,7 @@ func (c *Collection) schemasForSubject(access *accesscontrol.AccessSet) (*types.
 		}
 	}
 
-	result.Attributes = map[string]interface{}{
-		"accessSet": access,
-	}
+	accesscontrol.SetAccessSetAttribute(result, access)
 	return result, nil
 }
 
