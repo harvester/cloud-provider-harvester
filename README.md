@@ -26,9 +26,40 @@ Select the `harvester` cloud provider, and the node driver will help deploy both
 
 ![](doc/image/rke2-cloud-provider.png)
 
-
 ### Helm chart
 To find the helm chart in the [harvester helm chart repo](https://charts.harvesterhci.io).
+
+## How to Contribute
+
+General guide is on [Harvester Developer Guide](https://github.com/harvester/harvester/blob/master/DEVELOPER_GUIDE.md).
+
+### Build
+
+1. Run `make ci` on the source code
+
+```
+/go/src/github.com/harvester/cloud-provider-harvester$ make ci
+```
+
+1. A successful run will generate following container images.
+
+```
+REPOSITORY                                                                                           TAG                                         IMAGE ID       CREATED         SIZE
+rancher/harvester-cloud-provider                                                                     d2fb13d3-amd64                              903acc7ba945   2 hours ago     133MB
+
+```
+
+1. Push or upload the new image to the running [guest cluster](https://docs.harvesterhci.io/v1.6/rancher/node/rke2-cluster#create-rke2-kubernetes-cluster), replace it to the deployment and test your change.
+
+### Chart
+
+The chart definition is managed on a central repo `https://github.com/harvester/charts`. Changes needs to be sent to it.
+
+https://github.com/harvester/charts/tree/master/charts/harvester-cloud-provider
+
+For more information, see [Chart README](https://github.com/harvester/charts/blob/master/README.md).
+
+This chart targets to integrate with Rancher Manager, see [Harvester Cloud Provider](https://docs.harvesterhci.io/v1.6/rancher/cloud-provider).
 
 ## License
 Copyright (c) 2021 Rancher Labs, Inc.
