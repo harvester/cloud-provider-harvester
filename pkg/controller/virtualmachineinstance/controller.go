@@ -65,9 +65,12 @@ type Handler struct {
 func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance) (*kubevirtv1.VirtualMachineInstance, error) {
 	// TODO: Add some unit tests for this controller
 
+	if vmi == nil || vmi.DeletionTimestamp != nil {
+		return vmi, nil
+	}
+
 	// only handle the migration completed vmi
-	if vmi == nil || vmi.DeletionTimestamp != nil ||
-		vmi.Annotations == nil || vmi.Namespace != h.namespace || !isMigrationCompleted(vmi) {
+	if vmi.Annotations == nil || vmi.Labels == nil || vmi.Namespace != h.namespace || !isMigrationCompleted(vmi) {
 		logrus.WithFields(logrus.Fields{
 			"namespace": vmi.Namespace,
 			"name":      vmi.Name,
