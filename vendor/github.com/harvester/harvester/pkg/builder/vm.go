@@ -131,6 +131,24 @@ func (v *VMBuilder) Labels(labels map[string]string) *VMBuilder {
 	return v
 }
 
+// VirtualMachineInstanceTemplateLabels is similar to the Labels method, but it
+// sets the labels in the template spec. Unlike lables on the VirtualMachine
+// object, labels in the template spec will propagate to the VMI and the
+// launcher pod.
+func (v *VMBuilder) VirtualMachineInstanceTemplateLabels(labels map[string]string) *VMBuilder {
+	vmiTemplate := v.VirtualMachine.Spec.Template
+
+	if vmiTemplate.ObjectMeta.Labels == nil {
+		vmiTemplate.ObjectMeta.Labels = labels
+		return v
+	}
+
+	for key, value := range labels {
+		vmiTemplate.ObjectMeta.Labels[key] = value
+	}
+	return v
+}
+
 func (v *VMBuilder) Annotations(annotations map[string]string) *VMBuilder {
 	if v.VirtualMachine.ObjectMeta.Annotations == nil {
 		v.VirtualMachine.ObjectMeta.Annotations = annotations
@@ -219,6 +237,16 @@ func (v *VMBuilder) Run(start bool) *VMBuilder {
 
 func (v *VMBuilder) RunStrategy(runStrategy kubevirtv1.VirtualMachineRunStrategy) *VMBuilder {
 	v.VirtualMachine.Spec.RunStrategy = &runStrategy
+	return v
+}
+
+func (v *VMBuilder) DedicatedCPUPlacement(pinned bool) *VMBuilder {
+	v.VirtualMachine.Spec.Template.Spec.Domain.CPU.DedicatedCPUPlacement = pinned
+	return v
+}
+
+func (v *VMBuilder) IsolateEmulatorThread(isolated bool) *VMBuilder {
+	v.VirtualMachine.Spec.Template.Spec.Domain.CPU.IsolateEmulatorThread = isolated
 	return v
 }
 
