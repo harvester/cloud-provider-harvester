@@ -61,7 +61,7 @@ require (
 	k8s.io/api v0.34.0
 	k8s.io/apimachinery v0.34.0
 	k8s.io/client-go v12.0.0+incompatible
-	k8s.io/cloud-provider v0.31.5
+	k8s.io/cloud-provider v0.33.7
 	k8s.io/component-base v0.34.0
 	k8s.io/klog/v2 v2.130.1
 	kubevirt.io/api v1.7.0
@@ -206,4 +206,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.7.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
-
