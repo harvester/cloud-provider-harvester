@@ -1,12 +1,10 @@
 module github.com/harvester/harvester-cloud-provider
 
-go 1.25
+go 1.25.2
 
 toolchain go1.25.7
 
 replace (
-	github.com/google/cel-go => github.com/google/cel-go v0.22.0
-
 	github.com/google/gnostic-models v0.7.0 => github.com/google/gnostic-models v0.0.0-20250626140709-511df6b89d80
 
 	github.com/openshift/api => github.com/openshift/api v0.0.0-20191219222812-2987a591a72c
@@ -23,38 +21,22 @@ replace (
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.33.7
 	k8s.io/apimachinery => k8s.io/apimachinery v0.33.7
 	k8s.io/apiserver => k8s.io/apiserver v0.33.7
-	k8s.io/cli-runtime => k8s.io/cli-runtime v0.33.7
 	k8s.io/client-go => k8s.io/client-go v0.33.7
 	k8s.io/cloud-provider => k8s.io/cloud-provider v0.33.7
-	k8s.io/cluster-bootstrap => k8s.io/cluster-bootstrap v0.33.7
-	k8s.io/code-generator => k8s.io/code-generator v0.33.7
 	k8s.io/component-base => k8s.io/component-base v0.33.7
 	k8s.io/component-helpers => k8s.io/component-helpers v0.33.7
 	k8s.io/controller-manager => k8s.io/controller-manager v0.33.7
-	k8s.io/cri-api => k8s.io/cri-api v0.33.7
-	k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.33.7
 	k8s.io/kms => k8s.io/kms v0.33.7
-	k8s.io/kube-aggregator => k8s.io/kube-aggregator v0.33.7
-	k8s.io/kube-controller-manager => k8s.io/kube-controller-manager v0.33.7
 	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff
-	k8s.io/kube-scheduler => k8s.io/kube-scheduler v0.33.7
-	k8s.io/kubectl => k8s.io/kubectl v0.33.7
-	k8s.io/kubelet => k8s.io/kubelet v0.33.7
 	k8s.io/kubernetes => k8s.io/kubernetes v1.33.7
 	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.33.7
-	k8s.io/metrics => k8s.io/metrics v0.33.7
-	k8s.io/mount-utils => k8s.io/mount-utils v0.33.7
-	k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.33.7
-	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.33.7
 
-	sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.6.8
-	//sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.20.2
 	sigs.k8s.io/structured-merge-diff => sigs.k8s.io/structured-merge-diff v0.0.0-20190302045857-e85c7b244fd2
 )
 
 require (
 	github.com/harvester/harvester v1.7.1
-	github.com/harvester/harvester-load-balancer v0.2.0-rc2
+	github.com/harvester/harvester-load-balancer v1.7.1
 	github.com/rancher/wrangler/v3 v3.2.3-rc.3
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/pflag v1.0.6
@@ -72,7 +54,6 @@ require (
 	cel.dev/expr v0.24.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/NYTimes/gziphandler v1.1.1 // indirect
-	github.com/achanda/go-sysctl v0.0.0-20160222034550-6be7678c45d2 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
@@ -85,12 +66,12 @@ require (
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
 	github.com/evanphx/json-patch v5.9.11+incompatible // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
+	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
@@ -111,7 +92,6 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
 	github.com/harvester/go-common v0.0.0-20250109132713-e748ce72a7ba // indirect
-	github.com/harvester/harvester-network-controller v1.6.0-rc3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
@@ -139,7 +119,14 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
+	github.com/rancher/aks-operator v1.12.0 // indirect
+	github.com/rancher/eks-operator v1.12.0 // indirect
+	github.com/rancher/fleet/pkg/apis v0.13.0 // indirect
+	github.com/rancher/gke-operator v1.12.0 // indirect
 	github.com/rancher/lasso v0.2.3 // indirect
+	github.com/rancher/norman v0.7.0 // indirect
+	github.com/rancher/rancher/pkg/apis v0.0.0 // indirect
+	github.com/rancher/rke v1.8.5 // indirect
 	github.com/rancher/wrangler v1.1.2 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/safchain/ethtool v0.5.10 // indirect
@@ -179,8 +166,8 @@ require (
 	golang.org/x/text v0.27.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250519155744-55703ea1f237 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250519155744-55703ea1f237 // indirect
-	google.golang.org/grpc v1.72.2 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822 // indirect
+	google.golang.org/grpc v1.73.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
@@ -194,6 +181,7 @@ require (
 	k8s.io/kms v0.33.7 // indirect
 	k8s.io/kube-aggregator v0.33.1 // indirect
 	k8s.io/kube-openapi v0.31.9 // indirect
+	k8s.io/kubernetes v1.33.1 // indirect
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect
 	kubevirt.io/containerized-data-importer-api v1.63.1 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
