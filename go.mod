@@ -48,7 +48,7 @@ replace (
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.33.7
 
 	sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.6.8
-	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.20.2
+	//sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.20.2
 	sigs.k8s.io/structured-merge-diff => sigs.k8s.io/structured-merge-diff v0.0.0-20190302045857-e85c7b244fd2
 )
 
