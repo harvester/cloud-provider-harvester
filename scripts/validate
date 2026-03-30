@@ -11,6 +11,11 @@ fi
 echo Running validation
 
 echo Running: golangci-lint
+
+# Command `RUN golangci-lint --version` on Dockerfile.dapper does not print anything
+# It shows info like `golangci-lint has version 2.11.4 built with go1.26.1 from 8f3b0c7e on 2026-03-22T17:35:14Z` here
+golangci-lint --version
+
 golangci-lint run
 
 echo Running: go fmt
