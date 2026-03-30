@@ -1,11 +1,10 @@
 TARGETS := $(shell ls scripts)
 
 .dapper:
-	@echo Downloading dapper
-	@curl -sL https://releases.rancher.com/dapper/latest/dapper-`uname -s`-`uname -m` > .dapper.tmp
-	@@chmod +x .dapper.tmp
-	@./.dapper.tmp -v
-	@mv .dapper.tmp .dapper
+	@# 1. Run the script. It creates the file named '.dapper' which is validated by checksum
+	./scripts/hack/install-dapper.sh
+	@# 2. Verify the resulting binary
+	./.dapper -v
 
 $(TARGETS): .dapper
 	./.dapper $@
