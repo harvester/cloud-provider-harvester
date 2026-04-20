@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	lbv1 "github.com/harvester/harvester-load-balancer/pkg/apis/loadbalancer.harvesterhci.io/v1beta1"
 	pkgctllb "github.com/harvester/harvester-load-balancer/pkg/controller/loadbalancer"
 	ctllbv1 "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io/v1beta1"
@@ -18,6 +20,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/util/retry"
+
+	cfg "github.com/harvester/harvester-cloud-provider/pkg/config"
+	utils "github.com/harvester/harvester-cloud-provider/pkg/utils"
 )
 
 const (
@@ -192,6 +197,14 @@ func (l *LoadBalancerManager) EnsureLoadBalancerDeleted(ctx context.Context, clu
 	return l.deleteLoadBalancer(clusterName, service)
 }
 
+// the clusterName is passed by framework, if cloud-provider-harvester is not initialized with a valid value
+// the framework injiects "kubernetes"
+func warnClusterName(name, clusterName string) {
+	if clusterName == "" || clusterName == utils.DefaultGuestClusterName {
+		logrus.Warnf("The cluster name is %s, it might cause failure when creating lb %s, ensure an unique name is set", clusterName, name)
+	}
+}
+
 func (l *LoadBalancerManager) createOrUpdateLoadBalancer(name, clusterName string, service *v1.Service) error {
 	lb, err := l.lbClient.Get(l.namespace, name, metav1.GetOptions{})
 	if err != nil && !errors.IsNotFound(err) {
@@ -200,12 +213,35 @@ func (l *LoadBalancerManager) createOrUpdateLoadBalancer(name, clusterName strin
 
 	newLB := l.constructLB(lb, service, name, clusterName)
 	if errors.IsNotFound(err) {
+		warnClusterName(name, clusterName)
 		_, err = l.lbClient.Create(newLB)
 	} else {
 		_, err = l.lbClient.Update(newLB)
 	}
 
 	return err
+}
+
+func patchLB(lb *lbv1.LoadBalancer) {
+	if lb == nil {
+		return
+	}
+	config := cfg.Get()
+	if config == nil {
+		return
+	}
+
+	// if user has specify the management network, carry it
+	if cfg.ManagementNetwork != "" {
+		lb.Labels[utils.LabelKeyGuestClusterManagementNetworkOnLB] = cfg.ManagementNetwork
+	} else {
+		delete(lb.Labels, utils.LabelKeyGuestClusterManagementNetworkOnLB)
+	}
+
+	// only keep cloudprovider.harvesterhci.io/lbNetwork if AllowSpecifyLoadBalancerNetwork is specified
+	if !cfg.AllowSpecifyLoadBalancerNetwork {
+		delete(lb.Labels, utils.LabelKeyGuestClusterNetworkNameOnLB)
+	}
 }
 
 func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.Service, name, clusterName string) *lbv1.LoadBalancer {
@@ -240,6 +276,8 @@ func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.
 	lb.Labels[clusterNameKey] = clusterName
 	lb.Labels[serviceNamespaceKey] = service.Namespace
 	lb.Labels[serviceNameKey] = service.Name
+
+	patchLB(lb)
 
 	ipam := lbv1.Pool
 	if ipamStr, ok := service.Annotations[KeyIPAM]; ok {

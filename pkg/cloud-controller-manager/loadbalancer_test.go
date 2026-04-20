@@ -24,6 +24,7 @@ func Test_getLoadBalancerName(t *testing.T) {
 		{"case_3", args{"test", "default-default", "kube-system-rke2-ingress-nginx-controller", defaultUID}, "test-default-default-kube-system-rke2-ingress-nginx-con"},
 		{"case_4", args{"test", "default-default", "kube-system-rke2-ingress-nginx-co-abcd", defaultUID}, "test-default-default-kube-system-rke2-ingress-nginx-co-"},
 		{"case_5", args{"1test", "default-default", "kube-system-rke2-ingress-nginx-controller", defaultUID}, "a1test-default-default-kube-system-rke2-ingress-nginx-c"},
+		{"case_6", args{"kubernetes", "default-default", "kube-system-rke2-ingress-nginx-controller", defaultUID}, "kubernetes-default-default-kube-system-rke2-"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -33,4 +34,7 @@ func Test_getLoadBalancerName(t *testing.T) {
 			}
 		})
 	}
+
+	warnClusterName("lb1", "")                      // a logrus warn is emited
+	warnClusterName("lb2", defaultGuestClusterName) // a logrus warn is emited
 }

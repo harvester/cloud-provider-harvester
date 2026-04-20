@@ -14,6 +14,7 @@ import (
 	"k8s.io/klog/v2"
 
 	ccm "github.com/harvester/harvester-cloud-provider/pkg/cloud-controller-manager"
+	cfg "github.com/harvester/harvester-cloud-provider/pkg/config"
 )
 
 func main() {
@@ -30,6 +31,12 @@ func main() {
 	harv := fss.FlagSet("harvester")
 	harv.BoolVar(&ccm.DisableVMIController, "disable-vmi-controller", ccm.DisableVMIController,
 		"The disable-vmi-controller will disable sync topology to nodes and not affect the custom cluster.")
+
+	harv.StringVar(&cfg.ManagementNetwork, "management-network", "",
+		"The management-network will define the management network of the cluster, otherwise it selects the first network.")
+
+	harv.BoolVar(&cfg.AllowSpecifyLoadBalancerNetwork, "allow-specify-load-balancer-network", false,
+		"The allow-specify-load-balancer-network will allow loadbalancer to use user input annotation to specifiy the target network, otherwise the target network is alwasy refetched.")
 
 	command := app.NewCloudControllerManagerCommand(ccmOptions, cloudInitializer, controllerInitializers, map[string]string{}, fss, wait.NeverStop)
 

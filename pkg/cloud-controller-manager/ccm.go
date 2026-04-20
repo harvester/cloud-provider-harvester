@@ -6,6 +6,8 @@ import (
 	"os"
 	"sync"
 
+	"github.com/sirupsen/logrus"
+
 	ctllb "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io"
 	ctlkubevirt "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io"
 	ctlcore "github.com/rancher/wrangler/v3/pkg/generated/controllers/core"
@@ -113,6 +115,8 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 		nodeToVMName: nodeToVMName,
 		namespace:    namespace,
 	}
+
+	logrus.Infof("New CloudProvider Harvester on namespace %s", namespace)
 
 	return cp, nil
 }
