@@ -7,6 +7,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cloud-provider/api"
 	kubevirtv1 "kubevirt.io/api/core/v1"
+
+	utils "github.com/harvester/harvester-cloud-provider/pkg/utils"
 )
 
 const (
@@ -100,7 +102,7 @@ func Test_getNodeAddresses(t *testing.T) {
 					Name: nodeName,
 					Annotations: map[string]string{
 						api.AnnotationAlphaProvidedIPAddr: networkDefaultIP,
-						KeyAdditionalInternalIPs:          "[\"192.168.120.12\", \"192.168.120.11\"]", // match nothing
+						utils.KeyAdditionalInternalIPs:    "[\"192.168.120.12\", \"192.168.120.11\"]", // match nothing
 					},
 				},
 			},
@@ -165,7 +167,7 @@ func Test_getNodeAddresses(t *testing.T) {
 					Name: nodeName,
 					Annotations: map[string]string{
 						api.AnnotationAlphaProvidedIPAddr: networkDefaultIP,
-						KeyAdditionalInternalIPs:          "192.168.120.11", // not a valid []string converted JSON
+						utils.KeyAdditionalInternalIPs:    "192.168.120.11", // not a valid []string converted JSON
 					},
 				},
 			},
@@ -230,7 +232,7 @@ func Test_getNodeAddresses(t *testing.T) {
 					Name: nodeName,
 					Annotations: map[string]string{
 						api.AnnotationAlphaProvidedIPAddr: networkDefaultIP,
-						KeyAdditionalInternalIPs:          "[\"192.168.120.10\", \"192.168.120.11\"]",
+						utils.KeyAdditionalInternalIPs:    "[\"192.168.120.10\", \"192.168.120.11\"]",
 					},
 				},
 			},
@@ -295,7 +297,7 @@ func Test_getNodeAddresses(t *testing.T) {
 					Name: nodeName,
 					Annotations: map[string]string{
 						api.AnnotationAlphaProvidedIPAddr: networkDefaultIP,
-						KeyAdditionalInternalIPs:          "[\"192.168.120.10\", \"192.168.130.10\"]",
+						utils.KeyAdditionalInternalIPs:    "[\"192.168.120.10\", \"192.168.130.10\"]",
 					},
 				},
 			},
