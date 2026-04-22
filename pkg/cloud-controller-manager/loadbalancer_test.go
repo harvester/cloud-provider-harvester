@@ -3,6 +3,8 @@ package ccm
 import (
 	"strings"
 	"testing"
+
+	utils "github.com/harvester/harvester-cloud-provider/pkg/utils"
 )
 
 const defaultUID = "d4b50d98-39ec-4d88-8098-36579de5db4a"
@@ -35,6 +37,7 @@ func Test_getLoadBalancerName(t *testing.T) {
 		})
 	}
 
-	warnClusterName("lb1", "")                      // a logrus warn is emited
-	warnClusterName("lb2", defaultGuestClusterName) // a logrus warn is emited
+	warnClusterName("lb1", "") // a logrus warn is emited
+
+	warnClusterName("lb2", utils.DefaultGuestClusterName) // a logrus warn is emited
 }

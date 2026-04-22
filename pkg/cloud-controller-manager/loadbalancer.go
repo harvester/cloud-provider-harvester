@@ -198,10 +198,10 @@ func (l *LoadBalancerManager) EnsureLoadBalancerDeleted(ctx context.Context, clu
 }
 
 // the clusterName is passed by framework, if cloud-provider-harvester is not initialized with a valid value
-// the framework injiects "kubernetes"
+// the framework injects "kubernetes"
 func warnClusterName(name, clusterName string) {
 	if clusterName == "" || clusterName == utils.DefaultGuestClusterName {
-		logrus.Warnf("The cluster name is %s, it might cause failure when creating lb %s, ensure an unique name is set", clusterName, name)
+		logrus.Warnf("The cluster name is %q, it might cause failure when creating lb %s, ensure a unique name is set", clusterName, name)
 	}
 }
 

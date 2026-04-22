@@ -36,7 +36,7 @@ func main() {
 		"The management-network will define the management network of the cluster, otherwise it selects the first network.")
 
 	harv.BoolVar(&cfg.AllowSpecifyLoadBalancerNetwork, "allow-specify-load-balancer-network", false,
-		"The allow-specify-load-balancer-network will allow loadbalancer to use user input annotation to specifiy the target network, otherwise the target network is alwasy refetched.")
+		"The allow-specify-load-balancer-network will allow load balancer to use user input annotation to specify the target network, otherwise the target network is always refetched.")
 
 	command := app.NewCloudControllerManagerCommand(ccmOptions, cloudInitializer, controllerInitializers, map[string]string{}, fss, wait.NeverStop)
 
