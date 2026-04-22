@@ -2,6 +2,7 @@ package ccm
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -53,6 +54,10 @@ func init() {
 }
 
 func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
+	if reader == nil {
+		return nil, fmt.Errorf("can't init from an empty reader (io.Reader), check the --cloud-config to ensure it has a valid cloud-config")
+	}
+
 	bytes, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, err
