@@ -226,22 +226,31 @@ func patchLB(lb *lbv1.LoadBalancer) {
 	if lb == nil {
 		return
 	}
-	config := cfg.Get()
-	if config == nil {
-		return
+
+	if lb.Annotations == nil {
+		lb.Annotations = make(map[string]string)
 	}
 
-	// if user has specify the management network, carry it
+	// PRIORITY 1: Global Management Network (The Authority)
+	// This always takes precedence if set via the cloud-provider config.
 	if cfg.ManagementNetwork != "" {
-		lb.Labels[utils.LabelKeyGuestClusterManagementNetworkOnLB] = cfg.ManagementNetwork
+		lb.Annotations[utils.AnnotationKeyGuestClusterManagementNetworkOnLB] = cfg.ManagementNetwork
 	} else {
-		delete(lb.Labels, utils.LabelKeyGuestClusterManagementNetworkOnLB)
+		delete(lb.Annotations, utils.AnnotationKeyGuestClusterManagementNetworkOnLB)
 	}
 
+	// PRIORITY 2: Per-LB User Specified Target Network
+	// This is an override, but it is strictly guarded by the global 'AllowSpecifyLoadBalancerNetwork' flag.
 	// only keep cloudprovider.harvesterhci.io/lbNetwork if AllowSpecifyLoadBalancerNetwork is specified
 	if !cfg.AllowSpecifyLoadBalancerNetwork {
-		delete(lb.Labels, utils.LabelKeyGuestClusterNetworkNameOnLB)
+		// If not allowed globally, we strip the user's request to force the
+		// logic toward Priority 1 or the Priority 3 fallback.
+		delete(lb.Annotations, utils.AnnotationKeyGuestClusterNetworkNameOnLB)
 	}
+
+	// PRIORITY 3: Fallback (Implicit)
+	// If the logic reaching this, Harvester side LB finds both annotations missing, it will
+	// trigger the internal "look through and guess" iteration.
 }
 
 func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.Service, name, clusterName string) *lbv1.LoadBalancer {
@@ -277,6 +286,7 @@ func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.
 	lb.Labels[serviceNamespaceKey] = service.Namespace
 	lb.Labels[serviceNameKey] = service.Name
 
+	// per global setting, patch the lb
 	patchLB(lb)
 
 	ipam := lbv1.Pool

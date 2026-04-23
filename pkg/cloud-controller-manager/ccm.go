@@ -21,6 +21,7 @@ import (
 	"k8s.io/klog/v2"
 	"kubevirt.io/client-go/kubecli"
 
+	cfg "github.com/harvester/harvester-cloud-provider/pkg/config"
 	vmi "github.com/harvester/harvester-cloud-provider/pkg/controller/virtualmachineinstance"
 )
 
@@ -29,8 +30,6 @@ const (
 
 	threadiness = 2
 )
-
-var DisableVMIController bool
 
 type CloudProvider struct {
 	localCoreFactory *ctlcore.Factory
@@ -129,7 +128,7 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 func (c *CloudProvider) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, stop <-chan struct{}) {
 	client := clientBuilder.ClientOrDie(ProviderName)
 
-	if !DisableVMIController {
+	if !cfg.DisableVMIController {
 		vmi.Register(
 			c.Context,
 			client,

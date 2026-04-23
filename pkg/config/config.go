@@ -1,25 +1,27 @@
 package config
 
-import "sync"
+import (
+	"fmt"
 
-var (
-	instance *Config
-	once     sync.Once
-
-	ManagementNetwork               string
-	AllowSpecifyLoadBalancerNetwork bool
-	ClusterName                     string
+	"github.com/harvester/harvester-cloud-provider/pkg/utils"
 )
 
-type Config struct {
-	ManagementNetwork               string
-	ClusterName                     string
-	AllowSpecifyLoadBalancerNetwork bool
-}
+var (
+	// defined by framework
+	ClusterName string
 
-func Get() *Config {
-	once.Do(func() {
-		instance = &Config{}
-	})
-	return instance
+	// defined by harvester
+	ManagementNetwork               string
+	AllowSpecifyLoadBalancerNetwork bool
+	DisableVMIController            bool
+	ShowFullHelpOnError             bool
+)
+
+func CurrentConfigString() string {
+	return fmt.Sprintf("--%s=%v --%s=%v --%s=%v --%s=%v --%s=%v",
+		utils.FlagClusterName, ClusterName,
+		utils.FlagMgmtNetwork, ManagementNetwork,
+		utils.FlagAllowSpecifyLoadbalancerNetwork, AllowSpecifyLoadBalancerNetwork,
+		utils.FlagDisableVmiController, DisableVMIController,
+		utils.FlagShowFullHelpOnError, ShowFullHelpOnError)
 }
