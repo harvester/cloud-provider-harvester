@@ -2,7 +2,6 @@ package ccm
 
 import (
 	"bytes"
-	"os"
 	"strings"
 	"testing"
 
@@ -49,10 +48,10 @@ func Test_getLoadBalancerName(t *testing.T) {
 func Test_warnClusterName(t *testing.T) {
 	// 1. Setup a buffer to capture logs
 	var buf bytes.Buffer
+	originalOutput := logrus.StandardLogger().Out
 	logrus.SetOutput(&buf)
-
 	// 2. Ensure we reset logrus after the test
-	defer logrus.SetOutput(os.Stderr)
+	defer logrus.SetOutput(originalOutput)
 
 	tests := []struct {
 		name        string
@@ -96,8 +95,6 @@ func Test_warnClusterName(t *testing.T) {
 }
 
 func Test_patchLB_Priority(t *testing.T) {
-	// Setup/Restore cfg logic here...
-
 	tests := []struct {
 		name                string
 		mgmtNetwork         string
@@ -106,62 +103,120 @@ func Test_patchLB_Priority(t *testing.T) {
 		expectedAnnotations map[string]string
 	}{
 		{
-			name:         "Priority 1 Enforced: Mgmt network exists",
+			name:         "User Override: User input normalized and mgmt network added",
 			mgmtNetwork:  "harvester-mgmt/vlan-100",
 			allowSpecify: true,
 			initialAnnotations: map[string]string{
-				// User tries to specify a custom one
-				utils.AnnotationKeyGuestClusterNetworkNameOnLB: "user/vlan-200",
+				utils.AnnotationKeyGuestClusterNetworkNameOnLB: "custom-vlan",
 			},
 			expectedAnnotations: map[string]string{
-				// Both are present, but your controller logic will read Mgmt first
+				// User input is normalized (bare name -> default/name)
+				utils.AnnotationKeyGuestClusterNetworkNameOnLB:       "default/custom-vlan",
 				utils.AnnotationKeyGuestClusterManagementNetworkOnLB: "harvester-mgmt/vlan-100",
-				utils.AnnotationKeyGuestClusterNetworkNameOnLB:       "user/vlan-200",
 			},
 		},
 		{
-			name:         "Priority 2 Stripped: User specified, but not allowed globally",
+			name:         "User Override: Invalid user input stripped, mgmt network remains",
+			mgmtNetwork:  "harvester-mgmt/vlan-100",
+			allowSpecify: true,
+			initialAnnotations: map[string]string{
+				utils.AnnotationKeyGuestClusterNetworkNameOnLB: "too/many/slashes",
+			},
+			expectedAnnotations: map[string]string{
+				// Invalid user input is deleted, mgmt is still applied
+				utils.AnnotationKeyGuestClusterManagementNetworkOnLB: "harvester-mgmt/vlan-100",
+			},
+		},
+		{
+			name:               "Management: Global config added when no user input exists",
+			mgmtNetwork:        "harvester-mgmt/vlan-100",
+			allowSpecify:       true,
+			initialAnnotations: map[string]string{},
+			expectedAnnotations: map[string]string{
+				utils.AnnotationKeyGuestClusterManagementNetworkOnLB: "harvester-mgmt/vlan-100",
+			},
+		},
+		{
+			name:               "Management: Global config normalized if bare name",
+			mgmtNetwork:        "mgmt-vlan",
+			allowSpecify:       true,
+			initialAnnotations: map[string]string{},
+			expectedAnnotations: map[string]string{
+				utils.AnnotationKeyGuestClusterManagementNetworkOnLB: "default/mgmt-vlan",
+			},
+		},
+		{
+			name:         "Management: Invalid global config stripped from annotations",
+			mgmtNetwork:  "invalid/global/net",
+			allowSpecify: true,
+			initialAnnotations: map[string]string{
+				utils.AnnotationKeyGuestClusterManagementNetworkOnLB: "old-val",
+			},
+			expectedAnnotations: map[string]string{},
+		},
+		{
+			name:         "Permissions: User input stripped when allowSpecify is false",
+			mgmtNetwork:  "harvester-mgmt/vlan-100",
+			allowSpecify: false,
+			initialAnnotations: map[string]string{
+				utils.AnnotationKeyGuestClusterNetworkNameOnLB: "user-vlan",
+			},
+			expectedAnnotations: map[string]string{
+				utils.AnnotationKeyGuestClusterManagementNetworkOnLB: "harvester-mgmt/vlan-100",
+			},
+		},
+		{
+			name:         "Fallback: Both annotations removed if mgmt is empty and user input disabled",
 			mgmtNetwork:  "",
 			allowSpecify: false,
 			initialAnnotations: map[string]string{
-				utils.AnnotationKeyGuestClusterNetworkNameOnLB: "user/vlan-200",
+				utils.AnnotationKeyGuestClusterNetworkNameOnLB:       "user-vlan",
+				utils.AnnotationKeyGuestClusterManagementNetworkOnLB: "old-mgmt",
 			},
 			expectedAnnotations: map[string]string{
-				// Result is empty -> Triggers Priority 3 (Fallback/Guess)
+				// Result is empty -> Harvester side will perform fallback discovery
 			},
 		},
 		{
-			name:         "Priority 2 Allowed: User specified and allowed globally",
+			name:         "Preservation: Non-related annotations are not touched",
+			mgmtNetwork:  "",
+			allowSpecify: false,
+			initialAnnotations: map[string]string{
+				"harvesterhci.io/other": "important-data",
+			},
+			expectedAnnotations: map[string]string{
+				"harvesterhci.io/other": "important-data",
+			},
+		},
+		{
+			name:         "Edge Case: Malformed parts (ns/) are stripped",
 			mgmtNetwork:  "",
 			allowSpecify: true,
 			initialAnnotations: map[string]string{
-				utils.AnnotationKeyGuestClusterNetworkNameOnLB: "user/vlan-200",
+				utils.AnnotationKeyGuestClusterNetworkNameOnLB: "namespace/",
 			},
-			expectedAnnotations: map[string]string{
-				utils.AnnotationKeyGuestClusterNetworkNameOnLB: "user/vlan-200",
-			},
-		},
-		{
-			name:         "Legacy Case: No global config and no LB annotations",
-			mgmtNetwork:  "",    // No global flag set
-			allowSpecify: false, // Default/Legacy state
-			initialAnnotations: map[string]string{
-				"other-annotation": "stays-untouched",
-			},
-			expectedAnnotations: map[string]string{
-				"other-annotation": "stays-untouched",
-				// No new annotations added, none removed.
-			},
+			expectedAnnotations: map[string]string{},
 		},
 	}
 
+	originalManagementNetwork := cfg.ManagementNetwork
+	originalAllowSpecifyLoadBalancerNetwork := cfg.AllowSpecifyLoadBalancerNetwork
+
+	defer func() {
+		cfg.ManagementNetwork = originalManagementNetwork
+		cfg.AllowSpecifyLoadBalancerNetwork = originalAllowSpecifyLoadBalancerNetwork
+	}()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Set global config state
 			cfg.ManagementNetwork = tt.mgmtNetwork
 			cfg.AllowSpecifyLoadBalancerNetwork = tt.allowSpecify
 
 			lb := &lbv1.LoadBalancer{
 				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "test-ns",
+					Name:        "test-lb",
 					Annotations: tt.initialAnnotations,
 				},
 			}

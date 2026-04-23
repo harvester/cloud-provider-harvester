@@ -222,6 +222,16 @@ func (l *LoadBalancerManager) createOrUpdateLoadBalancer(name, clusterName strin
 	return err
 }
 
+// patchLB prepares the LoadBalancer resource by normalizing and prioritizing
+// network annotations.
+//
+// DESIGN PHILOSOPHY:
+// The Cloud Provider acts as a high-fidelity messenger. It tries its best to send
+// the most accurate and flexible request to the remote Harvester (lb-controller) by
+// validating formats and enforcing configuration hierarchies. However, the
+// final decision on resource placement and network existence remains with the
+// remote lb controller. This "Fail-Clear" approach ensures that
+// errors are actionable and traffic never flows to an unintended network.
 func patchLB(lb *lbv1.LoadBalancer) {
 	if lb == nil {
 		return
@@ -231,26 +241,46 @@ func patchLB(lb *lbv1.LoadBalancer) {
 		lb.Annotations = make(map[string]string)
 	}
 
-	// PRIORITY 1: Global Management Network (The Authority)
-	// This always takes precedence if set via the cloud-provider config.
+	// PRIORITY 1 (Highest): Per-LB User Specified Target Network
+	// This is an explicit override. If the user provides this and the global flag
+	// 'AllowSpecifyLoadBalancerNetwork' is true, this value takes precedence.
+	// Note: If the user provides a non-existent network, LB provisioning may fail;
+	// this is intentional to avoid placing traffic on the wrong network silently.
+	if cfg.AllowSpecifyLoadBalancerNetwork {
+		val, exists := lb.Annotations[utils.AnnotationKeyGuestClusterNetworkNameOnLB]
+		if exists {
+			target, err := utils.NormalizeNetworkName(utils.NetworkTypeLB, val)
+			if err != nil {
+				logrus.Warnf("LoadBalancer %s/%s: %v, the user input is stripped.", lb.Namespace, lb.Name, err)
+				delete(lb.Annotations, utils.AnnotationKeyGuestClusterNetworkNameOnLB)
+			} else {
+				lb.Annotations[utils.AnnotationKeyGuestClusterNetworkNameOnLB] = target
+			}
+		}
+	} else {
+		// If the master switch is off, strictly remove any user-provided network annotations.
+		delete(lb.Annotations, utils.AnnotationKeyGuestClusterNetworkNameOnLB)
+	}
+
+	// PRIORITY 2 (Medium): Global Management Network
+	// This acts as the authoritative default provided by the cloud-provider config.
+	// It is used if the user hasn't specified a valid override.
 	if cfg.ManagementNetwork != "" {
-		lb.Annotations[utils.AnnotationKeyGuestClusterManagementNetworkOnLB] = cfg.ManagementNetwork
+		// Re-verifying the global config here ensures the annotation is always formatted correctly.
+		target, err := utils.NormalizeNetworkName(utils.NetworkTypeManagement, cfg.ManagementNetwork)
+		if err != nil {
+			logrus.Warnf("LoadBalancer %s/%s: global config %v, dropping annotation.", lb.Namespace, lb.Name, err)
+			delete(lb.Annotations, utils.AnnotationKeyGuestClusterManagementNetworkOnLB)
+		} else {
+			lb.Annotations[utils.AnnotationKeyGuestClusterManagementNetworkOnLB] = target
+		}
 	} else {
 		delete(lb.Annotations, utils.AnnotationKeyGuestClusterManagementNetworkOnLB)
 	}
 
-	// PRIORITY 2: Per-LB User Specified Target Network
-	// This is an override, but it is strictly guarded by the global 'AllowSpecifyLoadBalancerNetwork' flag.
-	// only keep cloudprovider.harvesterhci.io/lbNetwork if AllowSpecifyLoadBalancerNetwork is specified
-	if !cfg.AllowSpecifyLoadBalancerNetwork {
-		// If not allowed globally, we strip the user's request to force the
-		// logic toward Priority 1 or the Priority 3 fallback.
-		delete(lb.Annotations, utils.AnnotationKeyGuestClusterNetworkNameOnLB)
-	}
-
-	// PRIORITY 3: Fallback (Implicit)
-	// If the logic reaching this, Harvester side LB finds both annotations missing, it will
-	// trigger the internal "look through and guess" iteration.
+	// PRIORITY 3 (Lowest): Fallback (Implicit)
+	// If both annotations are missing after the logic above, the Harvester-side
+	// LoadBalancer controller will trigger its internal fallback discovery logic.
 }
 
 func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.Service, name, clusterName string) *lbv1.LoadBalancer {

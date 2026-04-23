@@ -8,7 +8,8 @@ import (
 
 var (
 	// defined by framework
-	ClusterName string
+	ClusterName              string
+	CloudProviderControllers string // raw input is string slices, but converted by bootstrap
 
 	// defined by harvester
 	ManagementNetwork               string
@@ -18,9 +19,10 @@ var (
 )
 
 func CurrentConfigString() string {
-	return fmt.Sprintf("--%s=%v --%s=%v --%s=%v --%s=%v --%s=%v",
+	return fmt.Sprintf("--%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v",
 		utils.FlagClusterName, ClusterName,
-		utils.FlagMgmtNetwork, ManagementNetwork,
+		utils.FlagCloudProviderControllers, CloudProviderControllers,
+		utils.FlagManagementNetwork, ManagementNetwork,
 		utils.FlagAllowSpecifyLoadbalancerNetwork, AllowSpecifyLoadBalancerNetwork,
 		utils.FlagDisableVmiController, DisableVMIController,
 		utils.FlagShowFullHelpOnError, ShowFullHelpOnError)

@@ -24,6 +24,8 @@ import (
 )
 
 func main() {
+	utils.BootstrapLogrus()
+
 	pflag.CommandLine.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
 
 	ccmOptions, err := options.NewCloudControllerManagerOptions()
@@ -38,7 +40,7 @@ func main() {
 	harv.BoolVar(&cfg.DisableVMIController, utils.FlagDisableVmiController, false,
 		"Disable sync topology to nodes and not affect the custom cluster.")
 
-	harv.StringVar(&cfg.ManagementNetwork, utils.FlagMgmtNetwork, "",
+	harv.StringVar(&cfg.ManagementNetwork, utils.FlagManagementNetwork, "",
 		"Define the management network of the cluster, otherwise it selects the first network.")
 
 	harv.BoolVar(&cfg.AllowSpecifyLoadBalancerNetwork, utils.FlagAllowSpecifyLoadbalancerNetwork, false,
@@ -139,16 +141,60 @@ func main() {
 // We log these values clearly at boot time to allow for immediate verification
 // of the runtime configuration in production logs.
 func syncAndValidateHarvesterConfig(cmd *cobra.Command) error {
-	cfg.ClusterName, _ = cmd.Flags().GetString(utils.FlagClusterName)
-	cfg.ManagementNetwork, _ = cmd.Flags().GetString(utils.FlagMgmtNetwork)
-	cfg.DisableVMIController, _ = cmd.Flags().GetBool(utils.FlagDisableVmiController)
-	cfg.AllowSpecifyLoadBalancerNetwork, _ = cmd.Flags().GetBool(utils.FlagAllowSpecifyLoadbalancerNetwork)
+	flags := cmd.Flags()
 
+	// Helper to catch internal registry errors (e.g. flag name typos in code)
+	// If GetString/GetBool fails, it means the flag wasn't registered properly.
+	getStr := func(name string) string {
+		val, err := flags.GetString(name)
+		if err != nil {
+			panic(fmt.Sprintf("internal error: flag %q not registered: %v", name, err))
+		}
+		return val
+	}
+	getBool := func(name string) bool {
+		val, err := flags.GetBool(name)
+		if err != nil {
+			panic(fmt.Sprintf("internal error: flag %q not registered: %v", name, err))
+		}
+		return val
+	}
+	getStrSlice := func(name string) []string {
+		val, err := flags.GetStringSlice(name)
+		if err != nil {
+			panic(fmt.Sprintf("internal error: flag %q not registered as stringSlice: %v", name, err))
+		}
+		return val
+	}
+
+	// 1. Sync values from flags
+	cfg.ClusterName = getStr(utils.FlagClusterName)
+	cfg.ManagementNetwork = getStr(utils.FlagManagementNetwork)
+	cfg.DisableVMIController = getBool(utils.FlagDisableVmiController)
+	cfg.AllowSpecifyLoadBalancerNetwork = getBool(utils.FlagAllowSpecifyLoadbalancerNetwork)
+	cfg.ShowFullHelpOnError = getBool(utils.FlagShowFullHelpOnError)
+
+	// it is required to be customized via chart, hence show the value
+	controllerSlice := getStrSlice(utils.FlagCloudProviderControllers)
+	cfg.CloudProviderControllers = strings.Join(controllerSlice, ",")
+
+	// 2. Validate ClusterName
 	if cfg.ClusterName == "" || cfg.ClusterName == utils.DefaultGuestClusterName {
-		logrus.Warnf("%s WARNING: the flag --%s=%s is using an empty or default value (%q). A unique cluster name is "+
-			"required for remote systems to identify this cluster in multi-cluster "+
-			"environments. This may cause resource collisions.",
-			utils.HarvesterCloudProvider, utils.FlagClusterName, cfg.ClusterName, utils.DefaultGuestClusterName)
+		logrus.Warnf("%s WARNING: the flag --%s is using an empty or default value (current value: %q). "+
+			"A unique cluster name is required for remote systems to identify this cluster. "+
+			"This may cause resource collisions.",
+			utils.HarvesterCloudProvider, utils.FlagClusterName, cfg.ClusterName)
+	}
+
+	// 3. Validate and Normalize Network
+	if cfg.ManagementNetwork != "" {
+		normalized, err := utils.NormalizeNetworkName(utils.NetworkTypeManagement, cfg.ManagementNetwork)
+		if err != nil {
+			logrus.Errorf("The input is invalid: %v, the value is dropped and use the default value (empty)", err)
+			cfg.ManagementNetwork = ""
+		} else {
+			cfg.ManagementNetwork = normalized
+		}
 	}
 
 	logrus.Infof("%s effective configurations: %s", utils.HarvesterCloudProvider, cfg.CurrentConfigString())
@@ -195,10 +241,6 @@ func handleStartupError(err error) {
 	// Visual boundary to separate the error from standard container logs
 	logrus.Errorf("=============================================================================================")
 	logrus.Errorf("FATAL: %s failed to start", utils.HarvesterCloudProvider)
-
-	// Log the exact raw arguments received by the OS
-	// This is the ultimate "truth" for debugging Helm/Shell injection issues
-	logrus.Errorf("Raw arguments: %v", os.Args)
 
 	// Detect flag-related errors (typos, unsupported flags, etc.)
 	isFlagError := strings.Contains(errStr, "unknown flag") ||

@@ -7,26 +7,33 @@ const (
 
 	// LabelKeyGuestClusterManagementNetworkOnLB = HarvesterCloudProviderPrefix + "managementNetwork"
 
+	NetworkTypeManagement = "managementNetwork"
+
+	NetworkTypeLB = "lbNetwork"
+
 	// when a guest cluster has multiple networks, it can explicitly say which one is the management network, instead of guessing or hardcoding
 	// value format: `default/vlan100`
-	AnnotationKeyGuestClusterManagementNetworkOnLB = HarvesterCloudProviderPrefix + "managementNetwork"
+	AnnotationKeyGuestClusterManagementNetworkOnLB = HarvesterCloudProviderPrefix + NetworkTypeManagement
 
 	// LabelKeyGuestClusterNetworkNameOnLB = HarvesterCloudProviderPrefix + "lbNetwork"
 
 	// if guest cluster sets a target network, then respect it
 	// // value format: `project200/vlan200`
-	AnnotationKeyGuestClusterNetworkNameOnLB = HarvesterCloudProviderPrefix + "lbNetwork"
+	AnnotationKeyGuestClusterNetworkNameOnLB = HarvesterCloudProviderPrefix + NetworkTypeLB
 
 	// cloud-provider framework injects `kubernetes` as cluster name when it is not set by runtime env `--cluster-name`
 	DefaultGuestClusterName = "kubernetes"
 
+	DefaultNamespace = "default"
+
 	// flags defined by framework
-	FlagClusterName = "cluster-name"
+	FlagClusterName              = "cluster-name"
+	FlagCloudProviderControllers = "controllers"
 
 	// flags defined by harvester
 	FlagDisableVmiController = "disable-vmi-controller"
 
-	FlagMgmtNetwork = "management-network"
+	FlagManagementNetwork = "management-network"
 
 	FlagAllowSpecifyLoadbalancerNetwork = "allow-specify-loadbalancer-network"
 
