@@ -9,7 +9,7 @@ import (
 const (
 	// prefix is the standard prefix for Harvester cloud provider annotations.
 	// Deprecated: use utils.HarvesterCloudProviderPrefix instead.
-	prefix = utils.HarvesterCloudProviderPrefix
+	// prefix = utils.HarvesterCloudProviderPrefix
 
 	// KeyIPAM is the annotation key for IPAM configuration.
 	// Deprecated: use utils.KeyIPAM instead.

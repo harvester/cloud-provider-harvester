@@ -28,8 +28,7 @@ const (
 	// replace `serviceNameKey      = prefix + "serviceName"`
 	LBServiceNameKey = HarvesterCloudProviderPrefix + "serviceName"
 
-	// LabelKeyGuestClusterManagementNetworkOnLB = HarvesterCloudProviderPrefix + "managementNetwork"
-
+	// new definitions
 	NetworkTypeManagement = "managementNetwork"
 
 	NetworkTypeLB = "lbNetwork"
@@ -38,13 +37,13 @@ const (
 	// value format: `default/vlan100`
 	AnnotationKeyGuestClusterManagementNetworkOnLB = HarvesterCloudProviderPrefix + NetworkTypeManagement
 
-	// LabelKeyGuestClusterNetworkNameOnLB = HarvesterCloudProviderPrefix + "lbNetwork"
-
 	// if guest cluster sets a target network, then respect it
-	// // value format: `project200/vlan200`
+	// value format: `project200/vlan200`
 	AnnotationKeyGuestClusterNetworkNameOnLB = HarvesterCloudProviderPrefix + NetworkTypeLB
 
-	// cloud-provider framework injects `kubernetes` as cluster name when it is not set by runtime env `--cluster-name`
+	// cloud-provider framework injects `kubernetes` as cluster-name when runtime env `--cluster-name` is not set
+	// if `--cluster-name=abc` then `cluster-name` is `abc`
+	// if `--cluster-name=` then `cluster-name` is `` (empty)
 	DefaultGuestClusterName = "kubernetes"
 
 	DefaultNamespace = "default"
@@ -53,7 +52,7 @@ const (
 	FlagClusterName              = "cluster-name"
 	FlagCloudProviderControllers = "controllers"
 
-	// flags defined by harvester
+	// flags defined by Harvester
 	FlagDisableVmiController = "disable-vmi-controller"
 
 	FlagManagementNetwork = "management-network"
@@ -73,4 +72,22 @@ const (
 	//     ERRO: Error detail: "unknown" is not in the list of known controllers
 	//     ERRO: =============================================================================================
 	FlagShowFullHelpOnError = "show-full-help-on-error"
+
+	// FlagNodeIPCIDR is the global filter for allowed node IP ranges.
+	// Supports dual-stack (e.g., "192.168.122.0/24,2001:db8::/64").
+	// When a node has multi-nics or multi-ips, we use this to precisely select
+	// the correct node-ip and avoid deterministic "guessing" failures.
+	FlagNodeIPCIDR = "node-ip-cidr"
+
+	// node-ip related
+
+	// Note:
+	// AnnotationAlphaProvidedIPAddr ("alpha.kubernetes.io/provided-node-ip")
+	// from "k8s.io/cloud-provider/api/well_known_annotations.go".
+	// is always respected first as a legacy override for backward compatibility.
+
+	// KeyNodeIPCIDR matches the user-defined mgmtCIDR configuration.
+	// This is the primary Harvester-specific way to filter node IPs.
+	// It supports dual-stack via comma-separated CIDRs.
+	KeyNodeIPCIDR = HarvesterCloudProviderPrefix + "node-ip-cidr"
 )
