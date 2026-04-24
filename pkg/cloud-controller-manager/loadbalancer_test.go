@@ -199,19 +199,17 @@ func Test_patchLB_Priority(t *testing.T) {
 		},
 	}
 
-	originalManagementNetwork := cfg.ManagementNetwork
-	originalAllowSpecifyLoadBalancerNetwork := cfg.AllowSpecifyLoadBalancerNetwork
-
-	defer func() {
-		cfg.ManagementNetwork = originalManagementNetwork
-		cfg.AllowSpecifyLoadBalancerNetwork = originalAllowSpecifyLoadBalancerNetwork
-	}()
+	originalConfig := *cfg.GetConfig()
+	restoreConfig := func() {
+		*cfg.GetConfig() = originalConfig
+	}
+	defer restoreConfig()
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set global config state
-			cfg.ManagementNetwork = tt.mgmtNetwork
-			cfg.AllowSpecifyLoadBalancerNetwork = tt.allowSpecify
+			cfg.GetConfig().ManagementNetwork = tt.mgmtNetwork
+			cfg.GetConfig().AllowSpecifyLoadBalancerNetwork = tt.allowSpecify
 
 			lb := &lbv1.LoadBalancer{
 				ObjectMeta: metav1.ObjectMeta{

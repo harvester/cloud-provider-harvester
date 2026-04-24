@@ -5,12 +5,16 @@ import (
 	"os"
 	"strings"
 
-	cfg "github.com/harvester/harvester-cloud-provider/pkg/config" // Import data store
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/harvester/harvester-cloud-provider/pkg/config" // Import data store
 )
 
-func GetCurrentConfigString() string {
+func GetCurrentConfigString(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
 	return fmt.Sprintf("--%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v",
 		FlagClusterName, cfg.ClusterName,
 		FlagCloudProviderControllers, cfg.CloudProviderControllers,
@@ -71,7 +75,7 @@ func GetCurrentConfigString() string {
 // TROUBLESHOOTING:
 // We log these values clearly at boot time to allow for immediate verification
 // of the runtime configuration in production logs.
-func SyncAndValidateHarvesterConfig(cmd *cobra.Command) error {
+func SyncAndValidateHarvesterConfig(cmd *cobra.Command, cfg *config.Config) error {
 	flags := cmd.Flags()
 
 	// 1. Helper to retrieve flags safely without panicking.
@@ -150,7 +154,7 @@ func SyncAndValidateHarvesterConfig(cmd *cobra.Command) error {
 		}
 	}
 
-	logrus.Infof("%s effective configurations: %s", HarvesterCloudProvider, GetCurrentConfigString())
+	logrus.Infof("%s effective configurations: %s", HarvesterCloudProvider, GetCurrentConfigString(cfg))
 	return nil
 }
 
@@ -165,7 +169,7 @@ func SyncAndValidateHarvesterConfig(cmd *cobra.Command) error {
 //
 // This is intentionally not exposed in the standard Helm Chart to keep
 // the user interface clean and prevent accidentally flooding production logs.
-func CheckFlagShowFullHelpOnError(cmd *cobra.Command) {
+func CheckFlagShowFullHelpOnError(cmd *cobra.Command, cfg *config.Config) {
 	showFullHelp := false
 	for _, arg := range os.Args {
 		// We check os.Args directly because this happens before cmd.Execute()
@@ -188,7 +192,7 @@ func CheckFlagShowFullHelpOnError(cmd *cobra.Command) {
 // Since the harvester-cloud-provider Helm chart allows users to inject custom flags via '.Values.extraArgs',
 // it is essential to check if the failure is due to an unknown flag. This ensures users
 // get clear feedback regarding typos in their Helm configuration rather than a generic crash.
-func HandleStartupError(err error) {
+func HandleStartupError(cfg *config.Config, err error) {
 	errStr := err.Error()
 
 	// Visual boundary to separate the error from standard container logs

@@ -128,7 +128,7 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 func (c *CloudProvider) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, stop <-chan struct{}) {
 	client := clientBuilder.ClientOrDie(ProviderName)
 
-	if !cfg.DisableVMIController {
+	if !cfg.GetConfig().DisableVMIController {
 		vmi.Register(
 			c.Context,
 			client,

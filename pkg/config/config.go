@@ -12,10 +12,10 @@
 // no additional writes occur, making them safe for concurrent reads by plugins and controllers.
 package config
 
-var (
+type Config struct {
 	// defined by cloud-provider framework
 	ClusterName              string
-	CloudProviderControllers string // raw input is string slices, but converted by bootstrap
+	CloudProviderControllers string
 
 	// defined by Harvester, refer pkg/utils/consts.go for more information
 	ManagementNetwork               string
@@ -23,4 +23,10 @@ var (
 	AllowSpecifyLoadBalancerNetwork bool
 	DisableVMIController            bool
 	ShowFullHelpOnError             bool
-)
+}
+
+var _config = &Config{}
+
+func GetConfig() *Config {
+	return _config
+}

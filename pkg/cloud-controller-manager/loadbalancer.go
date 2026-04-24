@@ -246,7 +246,7 @@ func patchLB(lb *lbv1.LoadBalancer) {
 	// 'AllowSpecifyLoadBalancerNetwork' is true, this value takes precedence.
 	// Note: If the user provides a non-existent network, LB provisioning may fail;
 	// this is intentional to avoid placing traffic on the wrong network silently.
-	if cfg.AllowSpecifyLoadBalancerNetwork {
+	if cfg.GetConfig().AllowSpecifyLoadBalancerNetwork {
 		val, exists := lb.Annotations[utils.AnnotationKeyGuestClusterNetworkNameOnLB]
 		if exists {
 			target, err := utils.NormalizeNetworkName(utils.NetworkTypeLB, val)
@@ -265,9 +265,9 @@ func patchLB(lb *lbv1.LoadBalancer) {
 	// PRIORITY 2 (Medium): Global Management Network
 	// This acts as the authoritative default provided by the cloud-provider config.
 	// It is used if the user hasn't specified a valid override.
-	if cfg.ManagementNetwork != "" {
+	if cfg.GetConfig().ManagementNetwork != "" {
 		// Re-verifying the global config here ensures the annotation is always formatted correctly.
-		target, err := utils.NormalizeNetworkName(utils.NetworkTypeManagement, cfg.ManagementNetwork)
+		target, err := utils.NormalizeNetworkName(utils.NetworkTypeManagement, cfg.GetConfig().ManagementNetwork)
 		if err != nil {
 			logrus.Warnf("LoadBalancer %s/%s: global config %v, dropping annotation.", lb.Namespace, lb.Name, err)
 			delete(lb.Annotations, utils.AnnotationKeyGuestClusterManagementNetworkOnLB)
