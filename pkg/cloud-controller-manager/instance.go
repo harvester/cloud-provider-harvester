@@ -16,6 +16,8 @@ import (
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider/api"
 	kubevirtv1 "kubevirt.io/api/core/v1"
+
+	utils "github.com/harvester/harvester-cloud-provider/pkg/utils"
 )
 
 type instanceManager struct {
@@ -128,7 +130,7 @@ func getNodeAddresses(node *v1.Node, vmi *kubevirtv1.VirtualMachineInstance) []v
 
 // User may want to mark some IPs of the node also as internal
 func getAdditionalInternalIPs(node *v1.Node) ([]string, error) {
-	aiIPs, ok := node.Annotations[KeyAdditionalInternalIPs]
+	aiIPs, ok := node.Annotations[utils.KeyAdditionalInternalIPs]
 	if !ok {
 		return nil, nil
 	}
