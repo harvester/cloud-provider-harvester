@@ -5,6 +5,29 @@ const (
 
 	HarvesterCloudProviderPrefix = HarvesterCloudProvider + "/"
 
+	// original defined on pkg/cloud-controller-manager/annotation.go, moved to here
+	KeyIPAM           = HarvesterCloudProviderPrefix + "ipam"
+	KeyNetwork        = HarvesterCloudProviderPrefix + "network"
+	KeyProject        = HarvesterCloudProviderPrefix + "project"
+	KeyNamespace      = HarvesterCloudProviderPrefix + "namespace"
+	KeyPrimaryService = HarvesterCloudProviderPrefix + "primary-service"
+
+	KeyKubevipLoadBalancerIP = "kube-vip.io/loadbalancerIPs"
+
+	KeyAdditionalInternalIPs = HarvesterCloudProviderPrefix + "additional-internal-ips"
+
+	// original defined&unexported on pkg/cloud-controller-manager/loadbalancer.go
+	// moved to here with adding LB prefix
+
+	// replace `clusterNameKey      = prefix + "cluster"`
+	LBClusterNameKey = HarvesterCloudProviderPrefix + "cluster"
+
+	// replace `serviceNamespaceKey = prefix + "serviceNamespace"`
+	LBServiceNamespaceKey = HarvesterCloudProviderPrefix + "serviceNamespace"
+
+	// replace `serviceNameKey      = prefix + "serviceName"`
+	LBServiceNameKey = HarvesterCloudProviderPrefix + "serviceName"
+
 	// LabelKeyGuestClusterManagementNetworkOnLB = HarvesterCloudProviderPrefix + "managementNetwork"
 
 	NetworkTypeManagement = "managementNetwork"

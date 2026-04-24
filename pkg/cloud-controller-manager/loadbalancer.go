@@ -29,9 +29,9 @@ const (
 	retryTimes    = 10
 	retryInterval = time.Second
 
-	serviceNamespaceKey = prefix + "serviceNamespace"
-	serviceNameKey      = prefix + "serviceName"
-	clusterNameKey      = prefix + "cluster"
+	//serviceNamespaceKey = utils.HarvesterCloudProviderPrefix + "serviceNamespace"
+	//serviceNameKey      = utils.HarvesterCloudProviderPrefix + "serviceName"
+	//clusterNameKey      = utils.HarvesterCloudProviderPrefix + "cluster"
 
 	maxNameLength = 63
 	lenOfSuffix   = 8
@@ -99,7 +99,7 @@ func loadBalancerName(clusterName, serviceNamespace, serviceName, serviceUID str
 // if it's an invalid service, return error.
 // if it's not a secondary service, return nil.
 func (l *LoadBalancerManager) getPrimaryService(service *v1.Service) (*v1.Service, error) {
-	primary, ok := service.Annotations[KeyPrimaryService]
+	primary, ok := service.Annotations[utils.KeyPrimaryService]
 	if !ok {
 		return nil, nil
 	}
@@ -114,7 +114,7 @@ func (l *LoadBalancerManager) getPrimaryService(service *v1.Service) (*v1.Servic
 		return nil, fmt.Errorf("get service %s failed: %w", primary, err)
 	}
 
-	if primarySvc.Annotations[KeyPrimaryService] != "" {
+	if primarySvc.Annotations[utils.KeyPrimaryService] != "" {
 		return nil, fmt.Errorf("service %s is not a primary service", primary)
 	}
 
@@ -304,23 +304,23 @@ func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.
 	if lb.Annotations == nil {
 		lb.Annotations = make(map[string]string)
 	}
-	lb.Annotations[pkgctllb.AnnotationKeyNetwork] = service.Annotations[KeyNetwork]
-	lb.Annotations[pkgctllb.AnnotationKeyProject] = service.Annotations[KeyProject]
-	lb.Annotations[pkgctllb.AnnotationKeyNamespace] = service.Annotations[KeyNamespace]
+	lb.Annotations[pkgctllb.AnnotationKeyNetwork] = service.Annotations[utils.KeyNetwork]
+	lb.Annotations[pkgctllb.AnnotationKeyProject] = service.Annotations[utils.KeyProject]
+	lb.Annotations[pkgctllb.AnnotationKeyNamespace] = service.Annotations[utils.KeyNamespace]
 	lb.Annotations[pkgctllb.AnnotationKeyCluster] = clusterName
 
 	if lb.Labels == nil {
 		lb.Labels = make(map[string]string)
 	}
-	lb.Labels[clusterNameKey] = clusterName
-	lb.Labels[serviceNamespaceKey] = service.Namespace
-	lb.Labels[serviceNameKey] = service.Name
+	lb.Labels[utils.LBClusterNameKey] = clusterName
+	lb.Labels[utils.LBServiceNamespaceKey] = service.Namespace
+	lb.Labels[utils.LBClusterNameKey] = service.Name
 
 	// per global setting, patch the lb
 	patchLB(lb)
 
 	ipam := lbv1.Pool
-	if ipamStr, ok := service.Annotations[KeyIPAM]; ok {
+	if ipamStr, ok := service.Annotations[utils.KeyIPAM]; ok {
 		ipam = lbv1.IPAM(ipamStr)
 	}
 	lb.Spec.IPAM = ipam
@@ -358,7 +358,7 @@ func (l *LoadBalancerManager) retryUpdateService(service *v1.Service, serviceTyp
 }
 
 func isPrimaryServiceUpdatedWithIP(service *v1.Service, lbAddress, ip string) bool {
-	return service.Annotations != nil && service.Annotations[KeyKubevipLoadBalancerIP] == ip && lbAddress == ip && service.Labels != nil && service.Labels[KeyPrimaryService] == ""
+	return service.Annotations != nil && service.Annotations[utils.KeyKubevipLoadBalancerIP] == ip && lbAddress == ip && service.Labels != nil && service.Labels[utils.KeyPrimaryService] == ""
 }
 
 func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, service *v1.Service) error {
@@ -383,13 +383,13 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 	}
 
 	updatePrimaryServiceObject := func(serviceCopy *v1.Service, ip, primaryLabel string) {
-		if serviceCopy.Labels != nil && serviceCopy.Labels[KeyPrimaryService] != "" {
-			serviceCopy.Labels[KeyPrimaryService] = ""
+		if serviceCopy.Labels != nil && serviceCopy.Labels[utils.KeyPrimaryService] != "" {
+			serviceCopy.Labels[utils.KeyPrimaryService] = ""
 		}
 		if serviceCopy.Annotations == nil {
 			serviceCopy.Annotations = make(map[string]string)
 		}
-		serviceCopy.Annotations[KeyKubevipLoadBalancerIP] = ip
+		serviceCopy.Annotations[utils.KeyKubevipLoadBalancerIP] = ip
 	}
 
 	// the above waitForIP takes time, it has high chance to hit the `IsConflict` error like
@@ -398,7 +398,7 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 }
 
 func isSecondaryServiceUpdatedWithPrimary(secondary *v1.Service, ip, labelValue string) bool {
-	return secondary.Annotations != nil && secondary.Annotations[KeyKubevipLoadBalancerIP] == ip && secondary.Annotations[KeyIPAM] == "" && secondary.Labels != nil && secondary.Labels[KeyPrimaryService] == labelValue
+	return secondary.Annotations != nil && secondary.Annotations[utils.KeyKubevipLoadBalancerIP] == ip && secondary.Annotations[utils.KeyIPAM] == "" && secondary.Labels != nil && secondary.Labels[utils.KeyPrimaryService] == labelValue
 }
 
 func (l *LoadBalancerManager) updateSecondaryServiceLoadBalancerIP(ip string, primary, secondary *v1.Service) error {
@@ -415,10 +415,10 @@ func (l *LoadBalancerManager) updateSecondaryServiceLoadBalancerIP(ip string, pr
 			secondaryCopy.Annotations = make(map[string]string)
 		}
 		// add a label for easy filtering
-		secondaryCopy.Labels[KeyPrimaryService] = primaryLabel
+		secondaryCopy.Labels[utils.KeyPrimaryService] = primaryLabel
 		// update the annotations and kube-vip will update the service status load balancer
-		secondaryCopy.Annotations[KeyKubevipLoadBalancerIP] = ip
-		delete(secondaryCopy.Annotations, KeyIPAM)
+		secondaryCopy.Annotations[utils.KeyKubevipLoadBalancerIP] = ip
+		delete(secondaryCopy.Annotations, utils.KeyIPAM)
 	}
 
 	return l.retryUpdateService(secondary, "secondary", ip, labelValue, updateSecondaryServiceObject)
@@ -467,7 +467,7 @@ func (l *LoadBalancerManager) checkPortOverlap(primary, secondary *v1.Service) e
 	// TODO: Listing services filtered by primary service label could cause concurrency problem because the primary service
 	// label is added after this function is called. Some eligible services may not be listed.
 	svcs, err := l.localSvcCache.List(metav1.NamespaceAll, labels.Set(map[string]string{
-		KeyPrimaryService: primaryServiceLabelValue(primary),
+		utils.KeyPrimaryService: primaryServiceLabelValue(primary),
 	}).AsSelector())
 	if err != nil {
 		return fmt.Errorf("list service failed: %w", err)
@@ -495,7 +495,7 @@ func (l *LoadBalancerManager) checkSecondaryServicesBeforeDeleted(primary *v1.Se
 	// Listing services filtered by primary service label could cause concurrency problem because there may be secondary
 	// services added after this function is called and before the service is deleted.
 	svcs, err := l.localSvcCache.List(metav1.NamespaceAll, labels.Set(map[string]string{
-		KeyPrimaryService: primaryServiceLabelValue(primary),
+		utils.KeyPrimaryService: primaryServiceLabelValue(primary),
 	}).AsSelector())
 	if err != nil {
 		return err
