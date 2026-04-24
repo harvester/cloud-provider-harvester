@@ -42,7 +42,7 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 			expected: config.Config{
 				ClusterName:                     "prod-cluster",
 				CloudProviderControllers:        "node,loadbalancer",
-				ManagementNetwork:               "harvester-public/vlan100", // Assuming normalization doesn't change this string
+				ManagementNetwork:               "harvester-public/vlan100",
 				NodeIPCIDR:                      "192.168.0.0/24",
 				DisableVMIController:            true,
 				AllowSpecifyLoadBalancerNetwork: true,
@@ -97,7 +97,7 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "Explict cluster-name flag with empty string",
+			name: "Explicit cluster-name flag with empty string",
 			inputFlags: map[string]interface{}{
 				FlagClusterName: "",
 			},
@@ -105,6 +105,15 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 			expected: config.Config{
 				ClusterName: "",
 				// Other fields remain zero-valued
+			},
+		},
+		{
+			name:       "No input flag",
+			inputFlags: map[string]interface{}{},
+			wantErr:    false,
+			expected:   config.Config{
+				// note: the cloud-provider framework injects "kubernetes" as cluster-name
+				// but on test code this case is not covered
 			},
 		},
 		// --- ERROR CASES ---

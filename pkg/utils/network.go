@@ -45,7 +45,8 @@ func ValidateCIDRFilter(cidrFilter string) error {
 		}
 
 		// 1. Strict Syntax Check
-		ip, ipNet, err := net.ParseCIDR(cidr)
+		var ip net.IP
+		_, ipNet, err := net.ParseCIDR(cidr)
 		if err != nil {
 			ip = net.ParseIP(cidr)
 			if ip == nil {
@@ -65,7 +66,7 @@ func ValidateCIDRFilter(cidrFilter string) error {
 
 		// 3. Multicast/Global Unicast Check
 		// Nodes must have Unicast addresses. 224.0.0.0/4 (Multicast) or 255.255.255.255 are invalid.
-		if ip.IsMulticast() || ip.IsGlobalUnicast() == false {
+		if ip.IsMulticast() || !ip.IsGlobalUnicast() {
 			// Note: IsGlobalUnicast() returns true for private ranges like 10.0.0.0/8
 			// but false for the limited broadcast 255.255.255.255.
 			return fmt.Errorf("invalid filter %q: must be a valid unicast address range", cidr)
