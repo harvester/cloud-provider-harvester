@@ -14,6 +14,10 @@ const (
 
 	KeyKubevipLoadBalancerIP = "kube-vip.io/loadbalancerIPs"
 
+	// Note: When a node reports multiple addresses as "InternalIP", Kubernetes typically
+	// prioritizes the first entry. This annotation effectively "hides" specific IPs from being
+	// categorized as "ExternalIP" without actually making them functional secondary
+	// internal addresses in the Kubernetes API.
 	KeyAdditionalInternalIPs = HarvesterCloudProviderPrefix + "additional-internal-ips"
 
 	// original defined&unexported on pkg/cloud-controller-manager/loadbalancer.go
@@ -31,7 +35,7 @@ const (
 	// new definitions
 	NetworkTypeManagement = "managementNetwork"
 
-	NetworkTypeLB = "lbNetwork"
+	NetworkTypeLB = "loadbalancerNetwork"
 
 	// when a guest cluster has multiple networks, it can explicitly say which one is the management network, instead of guessing or hardcoding
 	// value format: `default/vlan100`
@@ -55,9 +59,15 @@ const (
 	// flags defined by Harvester
 	FlagDisableVmiController = "disable-vmi-controller"
 
+	// disable the usage of annotation AnnotationAlphaProvidedIPAddr and KeyAdditionalInternalIPs
+	// as KeyAdditionalInternalIPs only works if AnnotationAlphaProvidedIPAddr is there
+	FlagDisableAnnotationAlphaProvidedIPAddr = "disable-annotation-alpha-provided-ip-addr"
+
 	FlagManagementNetwork = "management-network"
 
-	FlagAllowSpecifyLoadbalancerNetwork = "allow-specify-loadbalancer-network"
+	FlagLoadbalancerNetwork = "loadbalancer-network"
+
+	//FlagAllowSpecifyLoadbalancerNetwork = "allow-specify-loadbalancer-network"
 
 	// FlagShowFullHelpOnError toggles the display of the full framework help menu on startup failure.
 	// Since users utilize '.Values.extraArgs' to tune cloud-provider framework features—such as
@@ -79,15 +89,12 @@ const (
 	// the correct node-ip and avoid deterministic "guessing" failures.
 	FlagNodeIPCIDR = "node-ip-cidr"
 
+	FlagNodeExcludeIPRanges = "node-exclude-ip-ranges"
+
 	// node-ip related
 
 	// Note:
 	// AnnotationAlphaProvidedIPAddr ("alpha.kubernetes.io/provided-node-ip")
 	// from "k8s.io/cloud-provider/api/well_known_annotations.go".
 	// is always respected first as a legacy override for backward compatibility.
-
-	// KeyNodeIPCIDR matches the user-defined mgmtCIDR configuration.
-	// This is the primary Harvester-specific way to filter node IPs.
-	// It supports dual-stack via comma-separated CIDRs.
-	KeyNodeIPCIDR = HarvesterCloudProviderPrefix + "node-ip-cidr"
 )

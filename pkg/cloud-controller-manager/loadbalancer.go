@@ -28,11 +28,6 @@ import (
 const (
 	retryTimes    = 10
 	retryInterval = time.Second
-
-	//serviceNamespaceKey = utils.HarvesterCloudProviderPrefix + "serviceNamespace"
-	//serviceNameKey      = utils.HarvesterCloudProviderPrefix + "serviceName"
-	//clusterNameKey      = utils.HarvesterCloudProviderPrefix + "cluster"
-
 	maxNameLength = 63
 	lenOfSuffix   = 8
 )
@@ -199,9 +194,12 @@ func (l *LoadBalancerManager) EnsureLoadBalancerDeleted(ctx context.Context, clu
 
 // the clusterName is passed by framework, if cloud-provider-harvester is not initialized with a valid value
 // the framework injects "kubernetes"
-func warnClusterName(name, clusterName string) {
+func warnClusterName(logger logrus.FieldLogger, lbName, clusterName string) {
 	if clusterName == "" || clusterName == utils.DefaultGuestClusterName {
-		logrus.Warnf("The cluster name is %q, it might cause failure when creating lb %s, ensure a unique name is set", clusterName, name)
+		logger.WithFields(logrus.Fields{
+			"loadbalancer": lbName,
+			"cluster name": clusterName,
+		}).Warn("The --cluster-name is empty or default; please ensure a unique name is set to avoid resource conflicts.")
 	}
 }
 
@@ -213,7 +211,7 @@ func (l *LoadBalancerManager) createOrUpdateLoadBalancer(name, clusterName strin
 
 	newLB := l.constructLB(lb, service, name, clusterName)
 	if errors.IsNotFound(err) {
-		warnClusterName(name, clusterName)
+		warnClusterName(logrus.StandardLogger(), name, clusterName)
 		_, err = l.lbClient.Create(newLB)
 	} else {
 		_, err = l.lbClient.Update(newLB)
@@ -241,35 +239,39 @@ func patchLB(lb *lbv1.LoadBalancer) {
 		lb.Annotations = make(map[string]string)
 	}
 
-	// PRIORITY 1 (Highest): Per-LB User Specified Target Network
-	// This is an explicit override. If the user provides this and the global flag
-	// 'AllowSpecifyLoadBalancerNetwork' is true, this value takes precedence.
-	// Note: If the user provides a non-existent network, LB provisioning may fail;
-	// this is intentional to avoid placing traffic on the wrong network silently.
-	if cfg.GetConfig().AllowSpecifyLoadBalancerNetwork {
-		val, exists := lb.Annotations[utils.AnnotationKeyGuestClusterNetworkNameOnLB]
-		if exists {
-			target, err := utils.NormalizeNetworkName(utils.NetworkTypeLB, val)
-			if err != nil {
-				logrus.Warnf("LoadBalancer %s/%s: %v, the user input is stripped.", lb.Namespace, lb.Name, err)
-				delete(lb.Annotations, utils.AnnotationKeyGuestClusterNetworkNameOnLB)
-			} else {
-				lb.Annotations[utils.AnnotationKeyGuestClusterNetworkNameOnLB] = target
-			}
+	// PRIORITY 1 (Highest): Global Load Balancer Target Network Override
+	// This is a global administrative override from the cloud-provider config.
+	// If 'loadbalancer-network' is set in the global configuration, it takes
+	// absolute precedence over any other network selection logic.
+	//
+	// Note: To maintain consistency, we sync this global setting into the LB
+	// annotation. If the global config is empty or invalid, we purge the
+	// annotation to ensure no "stale" or unauthorized network requests persist.
+	if lbnetwork, ok := cfg.GetConfig().GetLoadbalancerNetwork(); ok {
+		target, err := utils.NormalizeNetworkName(utils.NetworkTypeLB, lbnetwork)
+		if err != nil {
+			// If the global config provides a network name that cannot be normalized,
+			// we treat it as a configuration error and clear the annotation to prevent
+			// provisioning on an undefined network.
+			logrus.Warnf("LoadBalancer %s/%s: global loadbalancer-network config error: %v. Clearing annotation.", lb.Namespace, lb.Name, err)
+			delete(lb.Annotations, utils.AnnotationKeyGuestClusterNetworkNameOnLB)
+		} else {
+			lb.Annotations[utils.AnnotationKeyGuestClusterNetworkNameOnLB] = target
 		}
 	} else {
-		// If the master switch is off, strictly remove any user-provided network annotations.
+		// If the global configuration is not provided, we strictly remove any
+		// existing network annotations to prevent unauthorized network selection.
 		delete(lb.Annotations, utils.AnnotationKeyGuestClusterNetworkNameOnLB)
 	}
 
 	// PRIORITY 2 (Medium): Global Management Network
 	// This acts as the authoritative default provided by the cloud-provider config.
 	// It is used if the user hasn't specified a valid override.
-	if cfg.GetConfig().ManagementNetwork != "" {
+	if mgmt, ok := cfg.GetConfig().GetManagementNetwork(); ok {
 		// Re-verifying the global config here ensures the annotation is always formatted correctly.
-		target, err := utils.NormalizeNetworkName(utils.NetworkTypeManagement, cfg.GetConfig().ManagementNetwork)
+		target, err := utils.NormalizeNetworkName(utils.NetworkTypeManagement, mgmt)
 		if err != nil {
-			logrus.Warnf("LoadBalancer %s/%s: global config %v, dropping annotation.", lb.Namespace, lb.Name, err)
+			logrus.Warnf("LoadBalancer %s/%s: management-network config error %v, dropping annotation.", lb.Namespace, lb.Name, err)
 			delete(lb.Annotations, utils.AnnotationKeyGuestClusterManagementNetworkOnLB)
 		} else {
 			lb.Annotations[utils.AnnotationKeyGuestClusterManagementNetworkOnLB] = target
@@ -314,7 +316,7 @@ func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.
 	}
 	lb.Labels[utils.LBClusterNameKey] = clusterName
 	lb.Labels[utils.LBServiceNamespaceKey] = service.Namespace
-	lb.Labels[utils.LBClusterNameKey] = service.Name
+	lb.Labels[utils.LBServiceNameKey] = service.Name
 
 	// per global setting, patch the lb
 	patchLB(lb)
@@ -354,6 +356,8 @@ func (l *LoadBalancerManager) retryUpdateService(service *v1.Service, serviceTyp
 	if err != nil {
 		return fmt.Errorf("failed to update %s service %s/%s with ip %s after retry, last error: %w", serviceType, service.Namespace, service.Name, ip, err)
 	}
+
+	logrus.Infof("loadbalancer successfully gets %s service %s/%s to update ip %s", serviceType, service.Namespace, service.Name, ip)
 	return nil
 }
 

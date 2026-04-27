@@ -34,23 +34,7 @@ func main() {
 
 	fss := cliflag.NamedFlagSets{}
 	harv := fss.FlagSet("harvester")
-	harv.BoolVar(&cfg.GetConfig().DisableVMIController, utils.FlagDisableVmiController, false,
-		"Disable sync topology to nodes and not affect the custom cluster.")
-
-	harv.StringVar(&cfg.GetConfig().ManagementNetwork, utils.FlagManagementNetwork, "",
-		"Define the Harvester network name (e.g., 'default/vlan-100'). The provider will fetch node-ip and "+
-			"allocate loadbalancer-ip from the VMI interface (guest cluster node) associated with this network.")
-
-	harv.StringVar(&cfg.GetConfig().NodeIPCIDR, utils.FlagNodeIPCIDR, "",
-		"Comma-separated list of CIDRs to filter node IPs (e.g., '192.168.122.0/24,2001:db8::/64'). "+
-			"When used with --management-network, it further refines which IPs on that specific interface are selected. "+
-			"Used to avoid non-deterministic guessing in multi-NIC/multi-IP setups.")
-
-	harv.BoolVar(&cfg.GetConfig().AllowSpecifyLoadBalancerNetwork, utils.FlagAllowSpecifyLoadbalancerNetwork, false,
-		"Allow loadbalancer to use user input annotation to specify the target network, otherwise the target network is always refetched. (default false)")
-
-	harv.BoolVar(&cfg.GetConfig().ShowFullHelpOnError, utils.FlagShowFullHelpOnError, false,
-		"Show the full help menu and flag list will be displayed if a configuration error occurs at startup. (default false)")
+	registerHarvesterFlags(harv)
 
 	command := app.NewCloudControllerManagerCommand(ccmOptions, cloudInitializer, controllerInitializers, map[string]string{}, fss, wait.NeverStop)
 
@@ -125,4 +109,46 @@ func cloudInitializer(config *cloudcontrollerconfig.CompletedConfig) cloudprovid
 	}
 
 	return cloud
+}
+
+func registerHarvesterFlags(harv *pflag.FlagSet) {
+	config := cfg.GetConfig()
+
+	harv.BoolVar(&config.DisableVMIController, utils.FlagDisableVmiController, false,
+		"Disable sync topology to nodes and not affect the custom cluster.")
+
+	harv.BoolVar(&config.DisableAnnotationAlphaProvidedIPAddr, utils.FlagDisableAnnotationAlphaProvidedIPAddr, false,
+		"By default, if the 'alpha.kubernetes.io/provided-node-ip' annotation is present, the cloud-provider \n"+
+			"    limits internal IP reporting to that specific address. Setting this to true causes the provider \n"+
+			"    to ignore this legacy annotation and instead determine the node IP based on the discovery pipeline \n"+
+			"    defined by --management-network and --node-ip-cidr.")
+
+	harv.StringVar(&config.ManagementNetwork, utils.FlagManagementNetwork, "",
+		"Define the management network of this guest cluster, which is carried by a Harvester network \n"+
+			"    (e.g., 'default/vlan-100'). This setting serves two primary purposes: \n"+
+			"    1. Node IP Reporting: Guides the instance manager to the specific network interface from which \n"+
+			"       to fetch the node's internal/external IP addresses. \n"+
+			"    2. LoadBalancer Allocation: Guides the loadbalancer plugin to allocate Service IPs from the \n"+
+			"       IPPool associated with this network.")
+
+	harv.StringVar(&config.NodeIPCIDR, utils.FlagNodeIPCIDR, "",
+		"Comma-separated list of CIDRs to filter node IPs (e.g., '192.168.122.0/24'). When used with \n"+
+			"    --management-network, the instance manager will use this as a secondary filter to mark specific \n"+
+			"    IPs on that interface as InternalIP. This prevents non-deterministic selection when a single \n"+
+			"    network interface has multiple IP addresses.")
+
+	harv.StringSliceVar(&config.NodeExcludeIPRanges, utils.FlagNodeExcludeIPRanges, []string{},
+		"Define IP ranges or single IPs to exclude (e.g., '10.0.0.0/8,2001:db8::/64,192.168.0.5'). This is the \n"+
+			"    final safety filter; any IP matching these ranges will not be marked as InternalIP or ExternalIP. \n"+
+			"    Consequently, they will be suppressed and will not appear in 'kubectl get nodes -o wide'. \n"+
+			"    This global setting replaces the legacy 'cloudprovider.harvesterhci.io/additional-internal-ips' \n"+
+			"    node annotation.")
+
+	harv.StringVar(&config.LoadbalancerNetwork, utils.FlagLoadbalancerNetwork, "",
+		"(Experimental) Define the Harvester network name for LoadBalancer services (e.g., 'poc/vlan300'). \n"+
+			"    When set, all LoadBalancer IPs will be allocated from this specific network. Successful routing \n"+
+			"    requires alignment with kube-vip configuration and potential guest OS kernel tuning.")
+
+	harv.BoolVar(&config.ShowFullHelpOnError, utils.FlagShowFullHelpOnError, false,
+		"If a configuration error occurs at startup, the full help menu and flag list will be displayed. (default false)")
 }
