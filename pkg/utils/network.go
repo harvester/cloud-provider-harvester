@@ -107,3 +107,17 @@ func VerifyNodeIPCIDR(ipStr string, cidrFilter string) bool {
 	}
 	return false
 }
+
+// ValidateIPOrCIDR checks if a string is a valid IP or CIDR range
+func ValidateIPOrCIDR(s string) error {
+	// Try as CIDR
+	_, _, err := net.ParseCIDR(s)
+	if err == nil {
+		return nil
+	}
+	// Try as IP
+	if ip := net.ParseIP(s); ip != nil {
+		return nil
+	}
+	return fmt.Errorf("must be a valid IP address (e.g. 10.0.0.1) or CIDR (e.g. 10.0.0.0/24)")
+}

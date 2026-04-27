@@ -37,6 +37,7 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 			},
 			sliceFlags: map[string][]string{
 				FlagCloudProviderControllers: {"node", "loadbalancer"},
+				FlagNodeExcludeIPRanges:      {},
 			},
 			wantErr: false,
 			expected: config.Config{
@@ -44,6 +45,7 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 				CloudProviderControllers:        "node,loadbalancer",
 				ManagementNetwork:               "harvester-public/vlan100",
 				NodeIPCIDR:                      "192.168.0.0/24",
+				NodeExcludeIPRanges:             nil,
 				DisableVMIController:            true,
 				AllowSpecifyLoadBalancerNetwork: true,
 				ShowFullHelpOnError:             true,
@@ -177,6 +179,7 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 			f.Bool(FlagAllowSpecifyLoadbalancerNetwork, false, "")
 			f.Bool(FlagShowFullHelpOnError, false, "")
 			f.StringSlice(FlagCloudProviderControllers, []string{}, "")
+			f.StringSlice(FlagNodeExcludeIPRanges, []string{}, "")
 
 			// 4. Inject values
 			for k, v := range tt.inputFlags {
@@ -206,6 +209,9 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 
 			// 7. Deep Comparison
 			actual := *targetCfg
+			if len(actual.NodeExcludeIPRanges) == 0 {
+				actual.NodeExcludeIPRanges = nil
+			}
 			if !reflect.DeepEqual(actual, tt.expected) {
 				t.Errorf("[%s] content mismatch!\nExpected: %+v\nActual:   %+v",
 					tt.name, tt.expected, actual)

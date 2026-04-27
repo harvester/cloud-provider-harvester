@@ -20,6 +20,7 @@ type Config struct {
 	// defined by Harvester, refer pkg/utils/consts.go for more information
 	ManagementNetwork               string
 	NodeIPCIDR                      string
+	NodeExcludeIPRanges             []string
 	AllowSpecifyLoadBalancerNetwork bool
 	DisableVMIController            bool
 	ShowFullHelpOnError             bool
@@ -29,4 +30,8 @@ var _config = &Config{}
 
 func GetConfig() *Config {
 	return _config
+}
+
+func IsManagementNetworkConfigured() bool {
+	return _config.ManagementNetwork != ""
 }

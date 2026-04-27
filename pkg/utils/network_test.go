@@ -186,3 +186,77 @@ func TestValidateCIDRFilter_Comprehensive(t *testing.T) {
 		})
 	}
 }
+
+func Test_ValidateIPOrCIDR(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		// --- Valid Cases ---
+		{
+			name:    "valid ipv4 address",
+			input:   "192.168.100.1",
+			wantErr: false,
+		},
+		{
+			name:    "valid ipv4 cidr",
+			input:   "192.168.100.0/24",
+			wantErr: false,
+		},
+		{
+			name:    "valid ipv6 address",
+			input:   "2001:db8::1",
+			wantErr: false,
+		},
+		{
+			name:    "valid ipv6 cidr",
+			input:   "2001:db8::/32",
+			wantErr: false,
+		},
+		{
+			name:    "valid ipv4 single host cidr",
+			input:   "10.0.0.1/32",
+			wantErr: false,
+		},
+
+		// --- Invalid Cases ---
+		{
+			name:    "invalid string",
+			input:   "not-an-ip",
+			wantErr: true,
+		},
+		{
+			name:    "invalid cidr mask",
+			input:   "10.0.0.0/33",
+			wantErr: true,
+		},
+		{
+			name:    "ip with port",
+			input:   "192.168.1.1:8080",
+			wantErr: true,
+		},
+		{
+			name:    "empty string",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			name:    "incomplete cidr",
+			input:   "192.168.1/",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateIPOrCIDR(tt.input)
+
+			// Check if we got an error when we didn't want one,
+			// or if we didn't get an error when we did want one.
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateIPOrCIDR(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+}

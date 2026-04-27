@@ -113,6 +113,10 @@ func SyncAndValidateHarvesterConfig(cmd *cobra.Command, cfg *config.Config) erro
 	if cfg.NodeIPCIDR, err = getStr(FlagNodeIPCIDR); err != nil {
 		return err
 	}
+	if cfg.NodeExcludeIPRanges, err = getStrSlice(FlagNodeExcludeIPRanges); err != nil {
+		return err
+	}
+
 	if cfg.DisableVMIController, err = getBool(FlagDisableVmiController); err != nil {
 		return err
 	}
@@ -151,6 +155,20 @@ func SyncAndValidateHarvesterConfig(cmd *cobra.Command, cfg *config.Config) erro
 	if cfg.NodeIPCIDR != "" {
 		if err := ValidateCIDRFilter(cfg.NodeIPCIDR); err != nil {
 			return fmt.Errorf("invalid configuration for --%s: %w", FlagNodeIPCIDR, err)
+		}
+	}
+
+	// 6. Strict Validation: Node Exclude IP Ranges
+	// We loop through the slice and ensure every entry is either a valid IP or a valid CIDR
+	if len(cfg.NodeExcludeIPRanges) > 0 {
+		for _, entry := range cfg.NodeExcludeIPRanges {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
+				continue
+			}
+			if err := ValidateIPOrCIDR(entry); err != nil {
+				return fmt.Errorf("invalid entry in --%s (%q): %w", FlagNodeExcludeIPRanges, entry, err)
+			}
 		}
 	}
 
@@ -221,4 +239,14 @@ func HandleStartupError(cfg *config.Config, err error) {
 
 	// Always exit with a non-zero code to trigger a Pod restart/error state
 	os.Exit(1)
+}
+
+func MatchManagementNetwork(network string) bool {
+	cfg := config.GetConfig()
+	// if not configured, then always true
+	if cfg == nil || cfg.ManagementNetwork == "" {
+		return true
+	}
+
+	return network == cfg.ManagementNetwork
 }

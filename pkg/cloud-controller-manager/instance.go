@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/netip"
-	"slices"
 	"strings"
 	"sync"
 
@@ -18,6 +17,7 @@ import (
 	"k8s.io/cloud-provider/api"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 
+	"github.com/harvester/harvester-cloud-provider/pkg/config"
 	utils "github.com/harvester/harvester-cloud-provider/pkg/utils"
 )
 
@@ -93,63 +93,104 @@ func (i *instanceManager) getVM(node *v1.Node) (*kubevirtv1.VirtualMachine, erro
 	return i.vmClient.Get(i.namespace, nodeName, metav1.GetOptions{})
 }
 
+func getManagementNetworks(vmi *kubevirtv1.VirtualMachineInstance) []string {
+	if config.IsManagementNetworkConfigured() {
+		// Build a list of network names (names of NICs) on the VM.
+		networkNames := make([]string, 0, 1)
+		for _, network := range vmi.Spec.Networks {
+
+			// format:
+			// networks:
+			//  - multus:
+			//	  networkName: default-none/vm-untag3
+			// name: nic-0
+
+			if network.Multus == nil {
+				// only NAD multus based network is supported on guest cluster
+				continue
+			}
+			// if ManagementNetwork is configured, then strictly match this network
+			if utils.MatchManagementNetwork(network.Multus.NetworkName) {
+				networkNames = append(networkNames, network.Name)
+				break
+			}
+		}
+		return networkNames
+	}
+
+	// Build a list of network names (names of NICs) on the VM.
+	networkNames := make([]string, 0, len(vmi.Spec.Networks))
+	for _, network := range vmi.Spec.Networks {
+		// format:
+		// networks:
+		//  - multus:
+		//	  networkName: default-none/vm-untag3
+		// name: nic-0
+		if network.Multus == nil {
+			// only NAD multus based network is supported on guest cluster
+			continue
+		}
+		networkNames = append(networkNames, network.Name)
+	}
+	return networkNames
+}
+
 func getNodeAddresses(node *v1.Node, vmi *kubevirtv1.VirtualMachineInstance) ([]v1.NodeAddress, error) {
+	cfg := config.GetConfig()
+
+	// 1. Fetch categorization and exclusion rules
 	internalIPRanges, err := getInternalIPRanges(node)
 	if err != nil {
 		return nil, err
 	}
 
-	// Optimistically assume that for every interface have one IP. Add one for the hostname address that we add later.
-	// Since the amount of IP addresses is probably very limited this should be fine.
-	nodeAddresses := make([]v1.NodeAddress, 0, len(vmi.Status.Interfaces)+1)
-
-	// Build a list of network names (names of NICs) on the VM.
-	networkNames := make([]string, 0, len(vmi.Spec.Networks))
-	for _, network := range vmi.Spec.Networks {
-		networkNames = append(networkNames, network.Name)
+	// 2. Then check VMI
+	if vmi == nil {
+		return nil, fmt.Errorf("vmi is empty, can't check node %s/%s", node.Namespace, node.Name)
 	}
 
-	// Find all IP addresses of the VM
-	for _, networkInterface := range vmi.Status.Interfaces {
-		// The interface list might contain interfaces that do not belong to any NIC of the VM. Filter them out.
-		if !slices.Contains(networkNames, networkInterface.Name) {
-			// Ignore interface since it does not belong to one of the NICs.
-			continue
-		}
+	// Legacy annotation support (treated as a "Negative" filter)
+	legacyExcludes, err := getAdditionalInternalIPs(node)
+	if err != nil {
+		logrus.Warnf("failed to parse legacy additional IPs for node %s: %v", node.Name, err)
+	}
 
-		for _, ipStr := range networkInterface.IPs {
-			ip, err := netip.ParseAddr(ipStr)
-			if err != nil {
-				// Failed to parse IP, skip it
-				logrus.WithFields(logrus.Fields{
-					"namespace": node.Namespace,
-					"name":      node.Name,
-				}).Warnf("Unable to parse IP %s, skip it: %s", ipStr, err.Error())
-				continue
-			}
+	// 2. Gatekeeper: Identify the correct Management NIC
+	networkNames := getManagementNetworks(vmi)
+	if len(networkNames) == 0 {
+		logrus.Warnf("did not find any valid network from vmi %s/%s, can't effectively fetch IP", vmi.Namespace, vmi.Name)
+		return []v1.NodeAddress{{Type: v1.NodeHostName, Address: node.Name}}, nil
+	}
 
-			// Skip addresses in link local range, other nodes don't seem to be able to reach this address during cluster bootstrapping.
-			if ip.Is6() && linkLocalIPv6Range.Contains(ip) {
-				continue
-			}
+	// Find more networks, only fetch IP from the first one, if non management-network is specified
+	targetNetwork := networkNames[0]
+	if len(networkNames) > 1 {
+		logrus.Warnf("found %v networks from vmi %s/%s, only fetch IP from the first network %s", len(networkNames), vmi.Namespace, vmi.Name, networkNames[0])
+	}
 
-			// Determine if the IP should be listed as an internal or external IP.
-			ipType := v1.NodeExternalIP
-			for _, internalPrefix := range internalIPRanges {
-				if internalPrefix.Contains(ip) {
-					// IP is an internal IP, no need to check further.
-					ipType = v1.NodeInternalIP
-					break
-				}
-			}
-
-			nodeAddresses = append(nodeAddresses, v1.NodeAddress{
-				Type:    ipType,
-				Address: ip.String(),
-			})
+	// 2. Find the status index for the target interface
+	idx := -1
+	for i, iface := range vmi.Status.Interfaces {
+		if iface.Name == targetNetwork {
+			idx = i
+			break
 		}
 	}
 
+	if idx == -1 {
+		logrus.Warnf("did not find any valid network from vmi %s/%s, can't effectively fetch IP", vmi.Namespace, vmi.Name)
+		return []v1.NodeAddress{{Type: v1.NodeHostName, Address: node.Name}}, nil
+	}
+
+	// 3. Process IPs using the new helper function
+	nodeAddresses := processInterfaceIPs(
+		vmi.Status.Interfaces[idx].IPs,
+		internalIPRanges,
+		cfg.NodeExcludeIPRanges,
+		legacyExcludes,
+	)
+
+	// always add node name
 	nodeAddresses = append(nodeAddresses, v1.NodeAddress{
 		Type:    v1.NodeHostName,
 		Address: node.Name,
@@ -158,7 +199,138 @@ func getNodeAddresses(node *v1.Node, vmi *kubevirtv1.VirtualMachineInstance) ([]
 	return nodeAddresses, nil
 }
 
+// processInterfaceIPs transforms raw IP strings into categorized NodeAddresses
+func processInterfaceIPs(ips []string, internalRanges []netip.Prefix, globalExcludes []string, legacyExcludes []string) []v1.NodeAddress {
+	addresses := make([]v1.NodeAddress, 0, len(ips)+1)
+	hasInternalIPv4 := false
+	hasInternalIPv6 := false
+
+	for _, ipStr := range ips {
+		// STEP A: Exclusion logic (The "Third Option")
+		if isIPExcluded(ipStr, globalExcludes, legacyExcludes) {
+			continue
+		}
+
+		ip, err := netip.ParseAddr(ipStr)
+		if err != nil {
+			continue
+		}
+
+		// Standard link-local check
+		if ip.Is6() && linkLocalIPv6Range.Contains(ip) {
+			continue
+		}
+
+		// STEP B: Categorization logic
+		ipType := v1.NodeExternalIP
+		isMatchCIDR := false
+		for _, prefix := range internalRanges {
+			if prefix.Contains(ip) {
+				isMatchCIDR = true
+				break
+			}
+		}
+
+		if isMatchCIDR {
+			ipType = v1.NodeInternalIP
+		} else if len(internalRanges) == 0 {
+			// Phase 2 Fallback: If no node-ip-cidr, first of family wins
+			if ip.Is4() && !hasInternalIPv4 {
+				ipType = v1.NodeInternalIP
+				hasInternalIPv4 = true
+			} else if ip.Is6() && !hasInternalIPv6 {
+				ipType = v1.NodeInternalIP
+				hasInternalIPv6 = true
+			}
+		}
+
+		addresses = append(addresses, v1.NodeAddress{
+			Type:    ipType,
+			Address: ip.String(),
+		})
+	}
+
+	return addresses
+}
+
+func isIPExcluded(ipStr string, globalExcludes []string, legacyExcludes []string) bool {
+	// 1. Check Legacy Annotation (Direct string match)
+	for _, ex := range legacyExcludes {
+		if ipStr == ex {
+			return true
+		}
+	}
+
+	// 2. Check Global Config (Supports both IP and CIDR)
+	ip, err := netip.ParseAddr(ipStr)
+	if err != nil {
+		return false
+	}
+
+	for _, rule := range globalExcludes {
+		// Try as CIDR
+		if prefix, err := netip.ParsePrefix(rule); err == nil {
+			if prefix.Contains(ip) {
+				return true
+			}
+			continue
+		}
+		// Try as Static IP
+		if addr, err := netip.ParseAddr(rule); err == nil {
+			if addr == ip {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 func getInternalIPRanges(node *v1.Node) ([]netip.Prefix, error) {
+	cfg := config.GetConfig()
+	internalIPRanges := make([]netip.Prefix, 0, 2)
+
+	// Priority 1: User-defined Global CIDR (The most stable way)
+	if cfg.NodeIPCIDR != "" {
+		// Handle comma-separated CIDRs if the user provided multiple
+		for _, cidr := range strings.Split(cfg.NodeIPCIDR, ",") {
+			prefix, err := netip.ParsePrefix(strings.TrimSpace(cidr))
+			if err == nil {
+				internalIPRanges = append(internalIPRanges, prefix)
+			}
+		}
+		// If we have a global CIDR, we use it strictly.
+		return internalIPRanges, nil
+	}
+
+	// Priority 2: Kubelet provided IP (--node-ip)
+	providedNodeIP, ok := node.Annotations[api.AnnotationAlphaProvidedIPAddr]
+	if ok {
+		nodeIPRange, err := ipStringToPrefix(providedNodeIP)
+		if err == nil {
+			internalIPRanges = append(internalIPRanges, nodeIPRange)
+		}
+	}
+
+	// Priority 3: Legacy Annotations
+	extraInternalIPs, err := getAdditionalInternalIPs(node)
+	if err != nil {
+		logrus.Warnf("skip legacy annotation, error: %s", err.Error())
+	} else {
+		for _, extra := range extraInternalIPs {
+			if extraRange, err := ipStringToPrefix(extra); err == nil {
+				internalIPRanges = append(internalIPRanges, extraRange)
+			}
+		}
+	}
+
+	// NOTE: If the list is empty here, processInterfaceIPs will
+	// automatically trigger the "First-Win" fallback.
+	// We no longer need to append 0.0.0.0/0.
+	return internalIPRanges, nil
+}
+
+func getInternalIPRangesBackup(node *v1.Node) ([]netip.Prefix, error) {
 	internalIPRanges := make([]netip.Prefix, 0, 1) // Most of the time we would only have 1 internal range defined, the provided node IP
 
 	// Kubelet sets this node annotation if the --node-ip flag is set and an external cloud provider is used

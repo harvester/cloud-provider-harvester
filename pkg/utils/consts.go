@@ -79,6 +79,8 @@ const (
 	// the correct node-ip and avoid deterministic "guessing" failures.
 	FlagNodeIPCIDR = "node-ip-cidr"
 
+	FlagNodeExcludeIPRanges = "node-exclude-ip-ranges"
+
 	// node-ip related
 
 	// Note:
