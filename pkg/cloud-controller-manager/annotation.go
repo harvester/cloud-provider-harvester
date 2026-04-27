@@ -1,5 +1,4 @@
 // Package ccm contains cloud-controller-manager related constants.
-// Deprecated: This package is deprecated. Please use the "github.com/harvester/harvester-cloud-provider/pkg/utils" package instead.
 package ccm
 
 import (
@@ -7,6 +6,9 @@ import (
 )
 
 const (
+	// Deprecated: those consts are deprecated.
+	// Please use the "github.com/harvester/harvester-cloud-provider/pkg/utils" package instead.
+
 	// prefix is the standard prefix for Harvester cloud provider annotations.
 	// Deprecated: use utils.HarvesterCloudProviderPrefix instead.
 	// prefix = utils.HarvesterCloudProviderPrefix

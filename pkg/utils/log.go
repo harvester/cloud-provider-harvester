@@ -37,11 +37,6 @@ func BootstrapLogrus() {
 	}
 
 	logrus.SetLevel(level)
-
-	if level >= logrus.TraceLevel {
-		logrus.Warn("BOOTSTRAP: High verbosity detected. Logging raw arguments.")
-		logrus.Tracef("Raw os.Args: %v", os.Args)
-	}
 }
 
 // MapK8sLevelToLogrus converts a klog verbosity string to a logrus Level.

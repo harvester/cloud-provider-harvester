@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/netip"
-	"slices"
-	"strings"
 	"sync"
 
 	ctlkubevirtv1 "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1"
@@ -15,13 +12,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	cloudprovider "k8s.io/cloud-provider"
-	"k8s.io/cloud-provider/api"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 
+	"github.com/harvester/harvester-cloud-provider/pkg/config"
 	utils "github.com/harvester/harvester-cloud-provider/pkg/utils"
 )
-
-var linkLocalIPv6Range = netip.MustParsePrefix("fe80::/10")
 
 type instanceManager struct {
 	vmClient     ctlkubevirtv1.VirtualMachineClient
@@ -75,7 +70,7 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 		meta.Zone = zone
 	}
 
-	meta.NodeAddresses, err = getNodeAddresses(node, vmi)
+	meta.NodeAddresses, err = getNodeAddresses(node, vmi, config.GetConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -91,156 +86,143 @@ func (i *instanceManager) getVM(node *v1.Node) (*kubevirtv1.VirtualMachine, erro
 	return i.vmClient.Get(i.namespace, nodeName, metav1.GetOptions{})
 }
 
-// getNodeAddresses return nodeAddresses only when the value of annotation `alpha.kubernetes.io/provided-node-ip` is not empty
-func getNodeAddresses(node *v1.Node, vmi *kubevirtv1.VirtualMachineInstance) ([]v1.NodeAddress, error) {
-	internalIPRanges, err := getInternalIPRanges(node)
+/*
+getNodeAddresses executes a 4-stage processing pipeline to resolve Node addresses
+from the underlying KubeVirt VMI. It is designed to be deterministic and "operator-friendly,"
+ensuring that any failure to find an IP results in a clear, actionable WARN log.
+
+Pipeline Stages:
+
+ 1. Decision Logic (Strategy Selection):
+    Determines the processing mode based on strict priority:
+    - Priority 1: Legacy Manual Override via 'alpha.kubernetes.io/provided-node-ip' annotation.
+    This is respected primarily for backward compatibility to avoid breaking legacy
+    systems. It is a first-class citizen unless explicitly disabled via the
+    '--disable-annotation-alpha-provided-ip-addr' flag.
+    - Priority 2: Policy-based filtering via CIDR prefixes (--node-ip-cidr).
+    RECOMMENDED: This is the preferred mode for multi-nic or multi-ip clusters to
+    ensure predictable IP selection.
+    - Priority 3: First-fit fallback (automatic discovery of the first valid IPv4/IPv6).
+
+ 2. Data Retrieval (Management Network Discovery):
+    Identifies which VMI interface to use for Node addressing:
+    - Explicit: Uses the network name provided via the '--management-network' flag.
+    - Implicit: Defaults to the first multus/secondary network found (first-found rule).
+    NOTE: In multi-network environments, it is STRONGLY recommended to set the
+    '--management-network' flag explicitly to avoid non-deterministic IP selection.
+
+3. Processing & Filtering (Safety & Scope):
+
+  - Validates IP syntax and discards loopback (127.0.0.1) or invalid strings.
+
+  - Global Exclusion (--node-exclude-ip-ranges): Only active when '--node-ip-cidr'
+    is set (Priority 2), allowing strict control over which IPs within a CIDR
+    range are permissible.
+
+  - Harvester Filter Annotation ('cloudprovider.harvesterhci.io/additional-internal-ips'):
+    Works in Priority 1 (Annotation) or Priority 3 (Fallback) modes. Matched `ExternalIP` IPs
+    are excluded from the Node object, hiding them from 'kubectl get nodes'.
+
+    4. Finalization:
+    Ensures the NodeHostName is always appended. If no IPs survive the filtration
+    gauntlet, the function returns only the Hostname to maintain controller stability
+    while logging a specific warning for troubleshooting.
+
+Maintenance Note:
+Node IP fetching is event-driven and may not be called frequently by the K8s framework.
+Always ensure exit points have unique WARN logs to identify if a missing IP is due
+to VMI status lag, configuration mismatch, or strict filtering policies.
+*/
+func getNodeAddresses(node *v1.Node, vmi *kubevirtv1.VirtualMachineInstance, cfg *config.Config) ([]v1.NodeAddress, error) {
+	if vmi == nil {
+		return nil, fmt.Errorf("unable to fetch IPs from node %s as its VMI is nil", node.Name)
+	}
+
+	getHostNameAddress := func() v1.NodeAddress {
+		return v1.NodeAddress{Type: v1.NodeHostName, Address: node.Name}
+	}
+	getNodeAddressWithHostNameOnly := func() []v1.NodeAddress {
+		return []v1.NodeAddress{getHostNameAddress()}
+	}
+
+	// --- STAGE 1: Decision Logic ---
+	networkNames := getManagementNetworks(vmi, cfg)
+	if len(networkNames) == 0 {
+		logrus.Warnf("No management networks found for node %s via its VMI %s/%s",
+			node.Name, vmi.Namespace, vmi.Name)
+		return getNodeAddressWithHostNameOnly(), nil
+	}
+
+	if len(networkNames) > 1 {
+		logrus.Warnf("Multi-network mode detected for node %s via its VMI %s/%s (discovered: %v). "+
+			"No --management-network flag provided; falling back to %q. "+
+			"Results may be unpredictable—please use the flag to specify the management network.",
+			node.Name, vmi.Namespace, vmi.Name, networkNames, networkNames[0])
+	}
+
+	targetNetwork := networkNames[0]
+	ctx := buildIPAddressProcessContext(node, targetNetwork, cfg)
+
+	// --- STAGE 2: Data Fetching ---
+	rawIPStrings, err := getRawIPsFromVMINetwork(vmi, targetNetwork)
 	if err != nil {
-		return nil, err
+		logrus.Warnf("Unable to fetch IPs for node %s via its VMI %s/%s on network %s: %v",
+			node.Name, vmi.Namespace, vmi.Name, targetNetwork, err)
+		return getNodeAddressWithHostNameOnly(), nil
 	}
 
-	// Optimistically assume that for every interface have one IP. Add one for the hostname address that we add later.
-	// Since the amount of IP addresses is probably very limited this should be fine.
-	nodeAddresses := make([]v1.NodeAddress, 0, len(vmi.Status.Interfaces)+1)
-
-	// Build a list of network names (names of NICs) on the VM.
-	networkNames := make([]string, 0, len(vmi.Spec.Networks))
-	for _, network := range vmi.Spec.Networks {
-		networkNames = append(networkNames, network.Name)
+	// --- STAGE 3: Processing Pipeline ---
+	validIPs, err := utils.ConvertAndFilterIPs(rawIPStrings)
+	if err != nil {
+		// rawIPStrings has content, but it's "garbage", log it
+		logrus.Errorf("Malformed IP data %q detected for node %s via its VMI %s/%s on network %s: %v",
+			rawIPStrings, node.Name, vmi.Namespace, vmi.Name, targetNetwork, err)
+		return getNodeAddressWithHostNameOnly(), nil
 	}
 
-	// Find all IP addresses of the VM
-	for _, networkInterface := range vmi.Status.Interfaces {
-		// The interface list might contain interfaces that do not belong to any NIC of the VM. Filter them out.
-		if !slices.Contains(networkNames, networkInterface.Name) {
-			// Ignore interface since it does not belong to one of the NICs.
-			continue
-		}
-
-		for _, ipStr := range networkInterface.IPs {
-			ip, err := netip.ParseAddr(ipStr)
-			if err != nil {
-				// Failed to parse IP, skip it
-				logrus.WithFields(logrus.Fields{
-					"namespace": node.Namespace,
-					"name":      node.Name,
-				}).Warnf("Unable to parse IP %s, skip it: %s", ipStr, err.Error())
-				continue
-			}
-
-			// Skip addresses in link local range, other nodes don't seem to be able to reach this address during cluster bootstrapping.
-			if ip.Is6() && linkLocalIPv6Range.Contains(ip) {
-				continue
-			}
-
-			// Determine if the IP should be listed as an internal or external IP.
-			ipType := v1.NodeExternalIP
-			for _, internalPrefix := range internalIPRanges {
-				if internalPrefix.Contains(ip) {
-					// IP is an internal IP, no need to check further.
-					ipType = v1.NodeInternalIP
-					break
-				}
-			}
-
-			nodeAddresses = append(nodeAddresses, v1.NodeAddress{
-				Type:    ipType,
-				Address: ip.String(),
-			})
-		}
+	if len(validIPs) == 0 {
+		logrus.Warnf("Found 0 valid IPs for node %s via its VMI %s/%s on network %s",
+			node.Name, vmi.Namespace, vmi.Name, targetNetwork)
+		return getNodeAddressWithHostNameOnly(), nil
 	}
 
-	nodeAddresses = append(nodeAddresses, v1.NodeAddress{
-		Type:    v1.NodeHostName,
-		Address: node.Name,
-	})
+	// selection, categorization (Internal/External) and filtering
+	candidates := resolveNodeIPs(validIPs, ctx)
+	if len(candidates) == 0 {
+		logrus.Warnf("Found %d IPs but all were filtered for node %s via its VMI %s/%s on network %s",
+			len(validIPs), node.Name, vmi.Namespace, vmi.Name, targetNetwork)
+		return getNodeAddressWithHostNameOnly(), nil
+	}
 
-	return nodeAddresses, nil
+	// --- STAGE 4: Finalize ---
+	finalAddresses := candidates.ToNodeAddresses()
+	finalAddresses = append(finalAddresses, getHostNameAddress())
+
+	logrus.Infof("Successfully resolved (fetched, checked and filtered) addresses for node %s via its VMI %s/%s on network %s: %v",
+		node.Name, vmi.Namespace, vmi.Name, targetNetwork, finalAddresses)
+
+	return finalAddresses, nil
 }
 
-func getInternalIPRanges(node *v1.Node) ([]netip.Prefix, error) {
-	internalIPRanges := make([]netip.Prefix, 0, 1) // Most of the time we would only have 1 internal range defined, the provided node IP
-
-	// Kubelet sets this node annotation if the --node-ip flag is set and an external cloud provider is used
-	providedNodeIP, ok := node.Annotations[api.AnnotationAlphaProvidedIPAddr]
-	if !ok {
-		// Annotation is not set, this could be because we are running in a dual stack setup.
-		// Assume all IPs are internal IPs.
-		internalIPRanges = append(internalIPRanges, netip.MustParsePrefix("0.0.0.0/0"))
-		internalIPRanges = append(internalIPRanges, netip.MustParsePrefix("::/0"))
-		return internalIPRanges, nil
-	}
-
-	// We got an IP from kubelet, parse it and convert it to a prefix containing only this IP
-	nodeIPRange, err := ipStringToPrefix(providedNodeIP)
-	if err != nil {
-		return nil, fmt.Errorf("annotation \"%s\" is invalid: %w", api.AnnotationAlphaProvidedIPAddr, err)
-	}
-	internalIPRanges = append(internalIPRanges, nodeIPRange)
-
-	// Support marking extra IPs as internal
-	extraInternalIPs, err := getAdditionalInternalIPs(node)
-	if err != nil {
-		// Unable to parse extra provided internal IP ranges, ignore them.
-		logrus.WithFields(logrus.Fields{
-			"namespace": node.Namespace,
-			"name":      node.Name,
-		}).Warnf("%s, skip it", err.Error())
-
-		// Return list without extra user defined IP ranges.
-		return internalIPRanges, nil
-	}
-
-	for _, extraInternalIP := range extraInternalIPs {
-		extraRange, err := ipStringToPrefix(extraInternalIP)
-		if err != nil {
-			// IP (range) malformed, skip it.
-			logrus.WithFields(logrus.Fields{
-				"namespace": node.Namespace,
-				"name":      node.Name,
-			}).Warnf("Unable to parse IP %s, skip it: %s", extraInternalIP, err.Error())
-			continue
-		}
-		internalIPRanges = append(internalIPRanges, extraRange)
-	}
-
-	return internalIPRanges, nil
-}
-
-// ipStringToPrefix converts an IP / CIDR range to a netip.Prefix. It supports IPv4 and IPv6 addresses.
-// If a plain IP address is given, it returns a Prefix that only contains this IP.
-// If a CIDR range is given, it returns a Prefix that contains the whole range.
-func ipStringToPrefix(str string) (netip.Prefix, error) {
-	if strings.Contains(str, "/") {
-		// CIDR notation
-		return netip.ParsePrefix(str)
-	}
-
-	// Plain IP address
-	addr, err := netip.ParseAddr(str)
-	if err != nil {
-		return netip.Prefix{}, fmt.Errorf("failed to parse IP address \"%s\": %w", str, err)
-	}
-
-	// For a single IPv4 address, the prefix length is 32; for IPv6, it's 128.
-	prefixLen := 32
-	if addr.Is6() {
-		prefixLen = 128
-	}
-
-	// Create a prefix with the single address in it.
-	return addr.Prefix(prefixLen)
-}
-
-// User may want to mark some IPs of the node also as internal
-func getAdditionalInternalIPs(node *v1.Node) ([]string, error) {
+// User may want to mark some IPs of the node also as internal (not exposed on `kubectl get nodes -A -owide`)
+// getAdditionalInternalIPs returns a list of IPs from the legacy annotation.
+// this is optional; if the annotation is missing or malformed, it returns nil.
+//
+// Note: When a node reports multiple addresses as "InternalIP", Kubernetes typically
+// prioritizes the first entry. This logic effectively "hides" specific IPs from being
+// categorized as "ExternalIP" without actually making them functional secondary
+// internal addresses in the Kubernetes API.
+func getAdditionalInternalIPs(node *v1.Node) []string {
 	aiIPs, ok := node.Annotations[utils.KeyAdditionalInternalIPs]
-	if !ok {
-		return nil, nil
+	if !ok || aiIPs == "" || aiIPs == "[]" || aiIPs == "null" {
+		return nil
 	}
+
 	var ips []string
-	err := json.Unmarshal([]byte(aiIPs), &ips)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode additional external IPs from %v: %w", aiIPs, err)
+	if err := json.Unmarshal([]byte(aiIPs), &ips); err != nil {
+		logrus.Errorf("skipping optional internal IP filtering for node %s due to malformed annotation: %v", node.Name, err)
+		return nil
 	}
-	return ips, nil
+
+	return ips
 }

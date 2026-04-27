@@ -1,11 +1,11 @@
 package utils
 
 import (
-	"strings"
+	"net/netip"
 	"testing"
 )
 
-func Test_normalizeNetworkName(t *testing.T) {
+func Test_NormalizeNetworkName(t *testing.T) {
 	tests := []struct {
 		name        string
 		networkType string
@@ -75,13 +75,11 @@ func Test_normalizeNetworkName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := NormalizeNetworkName(tt.networkType, tt.input)
 
-			// Check if we got an error when we expected one
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NormalizeNetworkName() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 
-			// Check if the resulting string matches
 			if got != tt.want {
 				t.Errorf("NormalizeNetworkName() got = %q, want %q", got, tt.want)
 			}
@@ -89,98 +87,90 @@ func Test_normalizeNetworkName(t *testing.T) {
 	}
 }
 
-func TestValidateCIDRFilter_Comprehensive(t *testing.T) {
+func Test_ConvertAndFilterIPs(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		wantErr bool
-		errMsg  string
+		name        string
+		input       []string
+		expected    []netip.Addr
+		expectError bool
 	}{
-		// --- GOOD CASES ---
 		{
-			name:    "IPv4 Only Mode",
-			input:   "192.168.10.0/24",
-			wantErr: false,
+			name:  "Valid IPv4 and IPv6",
+			input: []string{"10.0.0.1", "2001:db8::1"},
+			expected: []netip.Addr{
+				netip.MustParseAddr("10.0.0.1"),
+				netip.MustParseAddr("2001:db8::1"),
+			},
+			expectError: false,
 		},
 		{
-			name:    "IPv6 Only Mode",
-			input:   "2001:db8::/64",
-			wantErr: false,
+			name:  "Mixed Valid and Invalid",
+			input: []string{"10.0.0.1", "not-an-ip", "2001:db8::1"},
+			expected: []netip.Addr{
+				netip.MustParseAddr("10.0.0.1"),
+				netip.MustParseAddr("2001:db8::1"),
+			},
+			expectError: true,
 		},
 		{
-			name:    "Dual Stack Mode (Standard)",
-			input:   "10.0.0.0/8, fd00::/64",
-			wantErr: false,
+			name:        "Only Invalid",
+			input:       []string{"malformed"},
+			expected:    nil,
+			expectError: true,
 		},
 		{
-			name:    "Dual Stack with Literal IPs",
-			input:   "172.16.1.5, 2001:db8::fe21",
-			wantErr: false,
+			name:  "Filter Loopback",
+			input: []string{"127.0.0.1", "::1", "192.168.1.1"},
+			expected: []netip.Addr{
+				netip.MustParseAddr("192.168.1.1"),
+			},
+			expectError: false,
 		},
 		{
-			name:    "Complex Multi-Range (Legacy + Management + IPv6)",
-			input:   "10.0.0.0/24, 192.168.1.0/24, 2001:db8:a::/48",
-			wantErr: false,
+			name:  "Filter Link-Local",
+			input: []string{"169.254.10.1", "fe80::1", "10.0.0.5"},
+			expected: []netip.Addr{
+				netip.MustParseAddr("10.0.0.5"),
+			},
+			expectError: false,
 		},
 		{
-			name:    "Empty Input (Allowed, means no filtering)",
-			input:   "",
-			wantErr: false,
-		},
-
-		// --- ERROR CASES ---
-		{
-			name:    "Malformed: Impossible IPv4 Mask",
-			input:   "192.168.122.0/36",
-			wantErr: true,
-			errMsg:  "invalid CIDR",
+			name:  "Filter Multicast and Broadcast",
+			input: []string{"224.0.0.1", "255.255.255.255", "8.8.8.8"},
+			expected: []netip.Addr{
+				netip.MustParseAddr("8.8.8.8"),
+			},
+			expectError: false,
 		},
 		{
-			name:    "Malformed: Missing Octet",
-			input:   "192.168.1/24",
-			wantErr: true,
-			errMsg:  "invalid CIDR",
-		},
-		{
-			name:    "Logical: Loopback Block",
-			input:   "127.0.0.1",
-			wantErr: true,
-			errMsg:  "loopback",
-		},
-		{
-			name:    "Logical: Link-Local Block",
-			input:   "fe80::/10",
-			wantErr: true,
-			errMsg:  "link-local",
-		},
-		{
-			name:    "Logical: Multicast Block",
-			input:   "224.0.0.1",
-			wantErr: true,
-			errMsg:  "unicast",
-		},
-		{
-			name:    "Poisoned List: One bad CIDR in Dual Stack",
-			input:   "10.0.0.0/24, 2001:db8::/129", // IPv6 mask too large
-			wantErr: true,
-			errMsg:  "invalid CIDR",
+			name:        "Empty or Nil Input",
+			input:       []string{},
+			expected:    nil,
+			expectError: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateCIDRFilter(tt.input)
+			actual, err := ConvertAndFilterIPs(tt.input)
 
-			// 1. Check if we got an error when we expected one
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateCIDRFilter(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			if (err != nil) != tt.expectError {
+				t.Fatalf("ConvertAndFilterIPs() error = %v, expectError %v", err, tt.expectError)
+			}
+			if tt.expectError {
+				if actual != nil {
+					t.Errorf("Expected nil return on error, but got %v", actual)
+				}
 				return
 			}
 
-			// 2. If an error occurred, verify the message content
-			if tt.wantErr && err != nil {
-				if !strings.Contains(strings.ToLower(err.Error()), strings.ToLower(tt.errMsg)) {
-					t.Errorf("ValidateCIDRFilter(%q) error %q did not contain keyword %q", tt.input, err.Error(), tt.errMsg)
+			if len(actual) != len(tt.expected) {
+				t.Fatalf("Length mismatch: got %d, want %d", len(actual), len(tt.expected))
+			}
+
+			for i := range actual {
+				if actual[i] != tt.expected[i] {
+					t.Errorf("At index %d: got %s, want %s", i, actual[i], tt.expected[i])
 				}
 			}
 		})

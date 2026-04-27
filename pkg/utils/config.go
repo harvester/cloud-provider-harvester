@@ -8,19 +8,28 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/harvester/harvester-cloud-provider/pkg/config" // Import data store
+	"k8s.io/apimachinery/pkg/util/validation"
+
+	"github.com/harvester/harvester-cloud-provider/pkg/config"
 )
 
+// GetCurrentConfigString serializes the current configuration into a string of
+// CLI flags. The output is formatted with spaces between flags to allow
+// users to copy-paste the configuration directly into a terminal for debugging.
 func GetCurrentConfigString(cfg *config.Config) string {
 	if cfg == nil {
 		return ""
 	}
-	return fmt.Sprintf("--%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v",
+
+	return fmt.Sprintf("--%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v",
 		FlagClusterName, cfg.ClusterName,
 		FlagCloudProviderControllers, cfg.CloudProviderControllers,
 		FlagManagementNetwork, cfg.ManagementNetwork,
 		FlagNodeIPCIDR, cfg.NodeIPCIDR,
-		FlagAllowSpecifyLoadbalancerNetwork, cfg.AllowSpecifyLoadBalancerNetwork,
+		// Use helper to ensure a comma-separated string instead of a Go slice [a b]
+		FlagNodeExcludeIPRanges, cfg.GetNodeExcludeIPRangesCmdString(),
+		FlagDisableAnnotationAlphaProvidedIPAddr, cfg.DisableAnnotationAlphaProvidedIPAddr,
+		FlagLoadbalancerNetwork, cfg.LoadbalancerNetwork,
 		FlagDisableVmiController, cfg.DisableVMIController,
 		FlagShowFullHelpOnError, cfg.ShowFullHelpOnError)
 }
@@ -60,13 +69,15 @@ func GetCurrentConfigString(cfg *config.Config) string {
 //
 //   - Helm Chart Deployment: Ensure the following configuration is set (which
 //     is eventually converted into the deployment container args):
-//
-//     rkeConfig:
-//     chartValues:
-//     harvester-cloud-provider:
-//     global:
-//     cattle:
-//     clusterName: a-unique-name
+// Note: keep following indent
+/*
+   rkeConfig:
+     chartValues:
+       harvester-cloud-provider:
+         global:
+           cattle:
+             clusterName: a-unique-name
+*/
 //
 // HOW:
 // We fetch values here via RunE to ensure global synchronization before the
@@ -104,19 +115,31 @@ func SyncAndValidateHarvesterConfig(cmd *cobra.Command, cfg *config.Config) erro
 
 	// 2. Sync values and check for registration errors
 	var err error
+	var rawClusterName string
 	if cfg.ClusterName, err = getStr(FlagClusterName); err != nil {
 		return err
 	}
+	if rawClusterName, err = getStr(FlagClusterName); err != nil {
+		return err
+	}
+
 	if cfg.ManagementNetwork, err = getStr(FlagManagementNetwork); err != nil {
 		return err
 	}
 	if cfg.NodeIPCIDR, err = getStr(FlagNodeIPCIDR); err != nil {
 		return err
 	}
+	if cfg.NodeExcludeIPRanges, err = getStrSlice(FlagNodeExcludeIPRanges); err != nil {
+		return err
+	}
+
+	if cfg.DisableAnnotationAlphaProvidedIPAddr, err = getBool(FlagDisableAnnotationAlphaProvidedIPAddr); err != nil {
+		return err
+	}
 	if cfg.DisableVMIController, err = getBool(FlagDisableVmiController); err != nil {
 		return err
 	}
-	if cfg.AllowSpecifyLoadBalancerNetwork, err = getBool(FlagAllowSpecifyLoadbalancerNetwork); err != nil {
+	if cfg.LoadbalancerNetwork, err = getStr(FlagLoadbalancerNetwork); err != nil {
 		return err
 	}
 	if cfg.ShowFullHelpOnError, err = getBool(FlagShowFullHelpOnError); err != nil {
@@ -129,15 +152,11 @@ func SyncAndValidateHarvesterConfig(cmd *cobra.Command, cfg *config.Config) erro
 	}
 	cfg.CloudProviderControllers = strings.Join(controllerSlice, ",")
 
-	// 3. Logic Validation: ClusterName (Warning only, as per existing logic)
-	if cfg.ClusterName == "" || cfg.ClusterName == DefaultGuestClusterName {
-		logrus.Warnf("%s WARNING: the flag --%s is using an empty or default value (current value: %q). "+
-			"A unique cluster name is required for remote systems to identify this cluster.",
-			HarvesterCloudProvider, FlagClusterName, cfg.ClusterName)
-	}
+	// 3. Normalize and Warn: Cluster Name
+	cfg.ClusterName = normalizeAndWarnClusterName(logrus.StandardLogger(), rawClusterName)
 
 	// 4. Strict Validation: Management Network
-	// If the user provided a value, it MUST be valid. We no longer drop and continue.
+	// If the user provided a value, it MUST be valid.
 	if cfg.ManagementNetwork != "" {
 		normalized, err := NormalizeNetworkName(NetworkTypeManagement, cfg.ManagementNetwork)
 		if err != nil {
@@ -148,13 +167,32 @@ func SyncAndValidateHarvesterConfig(cmd *cobra.Command, cfg *config.Config) erro
 
 	// 5. Strict Validation: Node IP CIDR
 	// Fail early if the CIDR format or range is invalid.
-	if cfg.NodeIPCIDR != "" {
-		if err := ValidateCIDRFilter(cfg.NodeIPCIDR); err != nil {
-			return fmt.Errorf("invalid configuration for --%s: %w", FlagNodeIPCIDR, err)
+	if err := validateAndParseNodeIPCIDR(cfg); err != nil {
+		return err
+	}
+
+	// 6. Strict Validation: Node Exclude IP Ranges
+	if err := validateAndParseNodeExcludeIPRanges(cfg); err != nil {
+		return err
+	}
+
+	// 7. Strict Validation: Loadbalancer Network
+	// If the user provided a value, it MUST be valid.
+	if cfg.LoadbalancerNetwork != "" {
+		normalized, err := NormalizeNetworkName(NetworkTypeLB, cfg.LoadbalancerNetwork)
+		if err != nil {
+			return fmt.Errorf("invalid configuration for --%s: %w", FlagLoadbalancerNetwork, err)
 		}
+		cfg.LoadbalancerNetwork = normalized
 	}
 
 	logrus.Infof("%s effective configurations: %s", HarvesterCloudProvider, GetCurrentConfigString(cfg))
+	if cfg.ManagementNetwork == "" {
+		logrus.Warnf("The '--%s' is not specified. Falling back to default discovery:", FlagManagementNetwork)
+		logrus.Warnf("    - Node IPs: Fetched from the first available interface.")
+		logrus.Warnf("    - LoadBalancers: Allocated from the first available network/IPPool.")
+		logrus.Warnf("    Note: In multi-network environments, this can lead to non-deterministic IP reporting/allocating.")
+	}
 	return nil
 }
 
@@ -221,4 +259,50 @@ func HandleStartupError(cfg *config.Config, err error) {
 
 	// Always exit with a non-zero code to trigger a Pod restart/error state
 	os.Exit(1)
+}
+
+// normalizeAndWarnClusterName cleans the raw input and logs warnings for
+// invalid or default states to ensure downstream K8s compatibility.
+func normalizeAndWarnClusterName(logger logrus.FieldLogger, rawName string) string {
+	// 1. Strip literal quotes, backticks, and whitespace.
+	// When the --cluster-name is wrapped in literal quotes (e.g., "\"abc\""),
+	// it causes downstream LoadBalancer name generation to fail K8s validation.
+	normalized := strings.Trim(rawName, " \t\n\r\"'`")
+
+	if normalized != rawName {
+		logger.WithFields(logrus.Fields{
+			"raw":        rawName,
+			"normalized": normalized,
+		}).Warnf("the --%s value was trimmed of whitespace or quotes, using normalized valu", FlagClusterName)
+	}
+
+	if normalized != rawName {
+		logrus.Warnf("the --%s value %q was trimmed of whitespace or quotes; using normalized value: %q",
+			FlagClusterName, rawName, normalized)
+	}
+
+	// 2. Logic Validation: Check for empty or default values
+	if normalized == "" || normalized == DefaultGuestClusterName {
+		logger.WithFields(logrus.Fields{
+			"provided": rawName,
+			"result":   normalized,
+		}).Warnf("the flag --%s is empty or using the default value. A unique cluster name is recommended for remote systems to identify this cluster.", FlagClusterName)
+
+		if normalized == "" {
+			return normalized
+		}
+	}
+
+	// 3. RFC 1123 Validation
+	// We warn on failure but return the value anyway to maintain backward compatibility,
+	// allowing loadBalancerName() to attempt its own mitigations (like the "a" prefix).
+	errs := validation.IsDNS1123Label(normalized)
+	if len(errs) > 0 {
+		logger.WithFields(logrus.Fields{
+			"value":  normalized,
+			"errors": strings.Join(errs, "; "),
+		}).Warnf("the --%s value is not a valid DNS label; this may cause downstream issues", FlagClusterName)
+	}
+
+	return normalized
 }
