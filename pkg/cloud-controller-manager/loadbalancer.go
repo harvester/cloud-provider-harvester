@@ -28,11 +28,6 @@ import (
 const (
 	retryTimes    = 10
 	retryInterval = time.Second
-
-	//serviceNamespaceKey = utils.HarvesterCloudProviderPrefix + "serviceNamespace"
-	//serviceNameKey      = utils.HarvesterCloudProviderPrefix + "serviceName"
-	//clusterNameKey      = utils.HarvesterCloudProviderPrefix + "cluster"
-
 	maxNameLength = 63
 	lenOfSuffix   = 8
 )
@@ -314,7 +309,7 @@ func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.
 	}
 	lb.Labels[utils.LBClusterNameKey] = clusterName
 	lb.Labels[utils.LBServiceNamespaceKey] = service.Namespace
-	lb.Labels[utils.LBClusterNameKey] = service.Name
+	lb.Labels[utils.LBServiceNameKey] = service.Name
 
 	// per global setting, patch the lb
 	patchLB(lb)
@@ -354,6 +349,8 @@ func (l *LoadBalancerManager) retryUpdateService(service *v1.Service, serviceTyp
 	if err != nil {
 		return fmt.Errorf("failed to update %s service %s/%s with ip %s after retry, last error: %w", serviceType, service.Namespace, service.Name, ip, err)
 	}
+
+	logrus.Infof("loadbalancer successfully gets %s service %s/%s to update ip %s", serviceType, service.Namespace, service.Name, ip)
 	return nil
 }
 

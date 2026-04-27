@@ -80,6 +80,8 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 		return nil, err
 	}
 
+	logrus.Infof("node %s gets meta NodeAddresses %v", node.Name, meta.NodeAddresses)
+
 	return meta, nil
 }
 
@@ -91,7 +93,6 @@ func (i *instanceManager) getVM(node *v1.Node) (*kubevirtv1.VirtualMachine, erro
 	return i.vmClient.Get(i.namespace, nodeName, metav1.GetOptions{})
 }
 
-// getNodeAddresses return nodeAddresses only when the value of annotation `alpha.kubernetes.io/provided-node-ip` is not empty
 func getNodeAddresses(node *v1.Node, vmi *kubevirtv1.VirtualMachineInstance) ([]v1.NodeAddress, error) {
 	internalIPRanges, err := getInternalIPRanges(node)
 	if err != nil {
