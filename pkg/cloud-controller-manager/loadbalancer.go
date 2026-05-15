@@ -336,8 +336,24 @@ func (l *LoadBalancerManager) retryUpdateService(service *v1.Service, serviceTyp
 	return nil
 }
 
+// expectedServiceInterface returns the value that should be set for kube-vip.io/serviceInterface.
+// For pool IPAM mode it returns "auto" so kube-vip finds the interface by subnet match.
+// For DHCP mode it preserves whatever the user already set on the service (e.g. "enp2s0"),
+// so the cloud provider never overwrites the user's explicit interface choice.
+func expectedServiceInterface(service *v1.Service) string {
+	if service.Annotations != nil && lbv1.IPAM(service.Annotations[utils.KeyIPAM]) == lbv1.DHCP {
+		return service.Annotations[utils.KeyKubevipServiceInterface]
+	}
+	return "auto"
+}
+
 func isPrimaryServiceUpdatedWithIP(service *v1.Service, lbAddress, ip string) bool {
-	return service.Annotations != nil && service.Annotations[utils.KeyKubevipLoadBalancerIP] == ip && lbAddress == ip && service.Labels != nil && service.Labels[utils.KeyPrimaryService] == ""
+	return service.Annotations != nil &&
+		service.Annotations[utils.KeyKubevipLoadBalancerIP] == ip &&
+		service.Annotations[utils.KeyKubevipServiceInterface] == expectedServiceInterface(service) &&
+		lbAddress == ip &&
+		service.Labels != nil &&
+		service.Labels[utils.KeyPrimaryService] == ""
 }
 
 func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, service *v1.Service) error {
@@ -369,6 +385,12 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 			serviceCopy.Annotations = make(map[string]string)
 		}
 		serviceCopy.Annotations[utils.KeyKubevipLoadBalancerIP] = ip
+		iface := expectedServiceInterface(serviceCopy)
+		if iface != "" {
+			serviceCopy.Annotations[utils.KeyKubevipServiceInterface] = iface
+		} else {
+			delete(serviceCopy.Annotations, utils.KeyKubevipServiceInterface)
+		}
 	}
 
 	// the above waitForIP takes time, it has high chance to hit the `IsConflict` error like
@@ -377,7 +399,12 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 }
 
 func isSecondaryServiceUpdatedWithPrimary(secondary *v1.Service, ip, labelValue string) bool {
-	return secondary.Annotations != nil && secondary.Annotations[utils.KeyKubevipLoadBalancerIP] == ip && secondary.Annotations[utils.KeyIPAM] == "" && secondary.Labels != nil && secondary.Labels[utils.KeyPrimaryService] == labelValue
+	return secondary.Annotations != nil &&
+		secondary.Annotations[utils.KeyKubevipLoadBalancerIP] == ip &&
+		secondary.Annotations[utils.KeyKubevipServiceInterface] == "auto" &&
+		secondary.Annotations[utils.KeyIPAM] == "" &&
+		secondary.Labels != nil &&
+		secondary.Labels[utils.KeyPrimaryService] == labelValue
 }
 
 func (l *LoadBalancerManager) updateSecondaryServiceLoadBalancerIP(ip string, primary, secondary *v1.Service) error {
@@ -397,6 +424,7 @@ func (l *LoadBalancerManager) updateSecondaryServiceLoadBalancerIP(ip string, pr
 		secondaryCopy.Labels[utils.KeyPrimaryService] = primaryLabel
 		// update the annotations and kube-vip will update the service status load balancer
 		secondaryCopy.Annotations[utils.KeyKubevipLoadBalancerIP] = ip
+		secondaryCopy.Annotations[utils.KeyKubevipServiceInterface] = "auto"
 		delete(secondaryCopy.Annotations, utils.KeyIPAM)
 	}
 

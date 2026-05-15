@@ -14,11 +14,25 @@ const (
 
 	KeyKubevipLoadBalancerIP = "kube-vip.io/loadbalancerIPs"
 
+	// KeyKubevipServiceInterface is the annotation key for kube-vip service interface.
+	KeyKubevipServiceInterface = "kube-vip.io/serviceInterface"
+
 	// Note: When a node reports multiple addresses as "InternalIP", Kubernetes typically
 	// prioritizes the first entry. This annotation effectively "hides" specific IPs from being
 	// categorized as "ExternalIP" without actually making them functional secondary
 	// internal addresses in the Kubernetes API.
 	KeyAdditionalInternalIPs = HarvesterCloudProviderPrefix + "additional-internal-ips"
+
+	// KeyInterfaceNADMapping is stored on Node objects by the cloud provider.
+	// Value is a JSON map of Linux interface name -> Multus NetworkAttachmentDefinition name,
+	// e.g. {"enp1s0":"default/mgmt-vlan1","enp2s0":"default/net123"}.
+	// Frontend can read this annotation to present meaningful interface choices to users.
+	KeyInterfaceNADMapping = HarvesterCloudProviderPrefix + "interface-nad-mapping"
+
+	// KeyIPPoolNetworkMapping is stored on Node objects by the cloud provider.
+	// Value is a JSON map of IPPool name -> network NAD,
+	// e.g. {"pool1":"default/net123"}.
+	KeyIPPoolNetworkMapping = HarvesterCloudProviderPrefix + "ippool-network-mapping"
 
 	// original defined&unexported on pkg/cloud-controller-manager/loadbalancer.go
 	// moved to here with adding LB prefix

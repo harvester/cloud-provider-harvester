@@ -22,6 +22,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 
 	cfg "github.com/harvester/harvester-cloud-provider/pkg/config"
+	ippool "github.com/harvester/harvester-cloud-provider/pkg/controller/ippool"
 	vmi "github.com/harvester/harvester-cloud-provider/pkg/controller/virtualmachineinstance"
 )
 
@@ -45,7 +46,16 @@ type CloudProvider struct {
 
 	Context context.Context
 
-	namespace string
+	namespace   string
+	clusterName string
+}
+
+// SetClusterName is called after initialization to propagate the --cluster-name flag.
+func (c *CloudProvider) SetClusterName(name string) {
+	c.clusterName = name
+	if im, ok := c.instances.(*instanceManager); ok {
+		im.clusterName = name
+	}
 }
 
 func init() {
@@ -114,10 +124,12 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 		namespace:      namespace,
 	}
 	cp.instances = &instanceManager{
-		vmClient:     cp.kubevirtFactory.Kubevirt().V1().VirtualMachine(),
-		vmiClient:    cp.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
-		nodeToVMName: nodeToVMName,
-		namespace:    namespace,
+		vmClient:      cp.kubevirtFactory.Kubevirt().V1().VirtualMachine(),
+		vmiClient:     cp.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
+		nodeClient:    cp.localCoreFactory.Core().V1().Node(),
+		ipPoolClient:  cp.lbFactory.Loadbalancer().V1beta1().IPPool(),
+		nodeToVMName:  nodeToVMName,
+		namespace:     namespace,
 	}
 
 	logrus.Infof("New CloudProvider Harvester on namespace %s", namespace)
@@ -140,8 +152,20 @@ func (c *CloudProvider) Initialize(clientBuilder cloudprovider.ControllerClientB
 		)
 	}
 
+	if c.clusterName != "" {
+		ippool.Register(
+			c.Context,
+			c.lbFactory.Loadbalancer().V1beta1().IPPool(),
+			c.localCoreFactory.Core().V1().Node(),
+			c.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance().Cache(),
+			c.nodeToVMName,
+			c.namespace,
+			c.clusterName,
+		)
+	}
+
 	go func() {
-		if err := start.All(c.Context, threadiness, c.kubevirtFactory, c.localCoreFactory); err != nil {
+		if err := start.All(c.Context, threadiness, c.kubevirtFactory, c.localCoreFactory, c.lbFactory); err != nil {
 			klog.Fatalf("error starting controllers: %s", err.Error())
 		}
 		<-stop

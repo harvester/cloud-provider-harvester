@@ -108,6 +108,10 @@ func cloudInitializer(config *cloudcontrollerconfig.CompletedConfig) cloudprovid
 		}
 	}
 
+	if harvCloud, ok := cloud.(*ccm.CloudProvider); ok {
+		harvCloud.SetClusterName(config.ComponentConfig.KubeCloudShared.ClusterName)
+	}
+
 	return cloud
 }
 
