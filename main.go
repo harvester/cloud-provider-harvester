@@ -144,11 +144,6 @@ func registerHarvesterFlags(harv *pflag.FlagSet) {
 			"    This global setting replaces the legacy 'cloudprovider.harvesterhci.io/additional-internal-ips' \n"+
 			"    node annotation.")
 
-	harv.StringVar(&config.LoadbalancerNetwork, utils.FlagLoadbalancerNetwork, "",
-		"(Experimental) Define the Harvester network name for LoadBalancer services (e.g., 'poc/vlan300'). \n"+
-			"    When set, all LoadBalancer IPs will be allocated from this specific network. Successful routing \n"+
-			"    requires alignment with kube-vip configuration and potential guest OS kernel tuning.")
-
 	harv.BoolVar(&config.ShowFullHelpOnError, utils.FlagShowFullHelpOnError, false,
 		"If a configuration error occurs at startup, the full help menu and flag list will be displayed. (default false)")
 }

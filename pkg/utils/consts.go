@@ -35,15 +35,9 @@ const (
 	// new definitions
 	NetworkTypeManagement = "managementNetwork"
 
-	NetworkTypeLB = "loadbalancerNetwork"
-
 	// when a guest cluster has multiple networks, it can explicitly say which one is the management network, instead of guessing or hardcoding
 	// value format: `default/vlan100`
 	AnnotationKeyGuestClusterManagementNetworkOnLB = HarvesterCloudProviderPrefix + NetworkTypeManagement
-
-	// if guest cluster sets a target network, then respect it
-	// value format: `project200/vlan200`
-	AnnotationKeyGuestClusterNetworkNameOnLB = HarvesterCloudProviderPrefix + NetworkTypeLB
 
 	// cloud-provider framework injects `kubernetes` as cluster-name when runtime env `--cluster-name` is not set
 	// if `--cluster-name=abc` then `cluster-name` is `abc`
@@ -64,10 +58,6 @@ const (
 	FlagDisableAnnotationAlphaProvidedIPAddr = "disable-annotation-alpha-provided-ip-addr"
 
 	FlagManagementNetwork = "management-network"
-
-	FlagLoadbalancerNetwork = "loadbalancer-network"
-
-	//FlagAllowSpecifyLoadbalancerNetwork = "allow-specify-loadbalancer-network"
 
 	// FlagShowFullHelpOnError toggles the display of the full framework help menu on startup failure.
 	// Since users utilize '.Values.extraArgs' to tune cloud-provider framework features—such as

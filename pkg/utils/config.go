@@ -21,7 +21,7 @@ func GetCurrentConfigString(cfg *config.Config) string {
 		return ""
 	}
 
-	return fmt.Sprintf("--%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v",
+	return fmt.Sprintf("--%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v",
 		FlagClusterName, cfg.ClusterName,
 		FlagCloudProviderControllers, cfg.CloudProviderControllers,
 		FlagManagementNetwork, cfg.ManagementNetwork,
@@ -29,7 +29,6 @@ func GetCurrentConfigString(cfg *config.Config) string {
 		// Use helper to ensure a comma-separated string instead of a Go slice [a b]
 		FlagNodeExcludeIPRanges, cfg.GetNodeExcludeIPRangesCmdString(),
 		FlagDisableAnnotationAlphaProvidedIPAddr, cfg.DisableAnnotationAlphaProvidedIPAddr,
-		FlagLoadbalancerNetwork, cfg.LoadbalancerNetwork,
 		FlagDisableVmiController, cfg.DisableVMIController,
 		FlagShowFullHelpOnError, cfg.ShowFullHelpOnError)
 }
@@ -139,9 +138,6 @@ func SyncAndValidateHarvesterConfig(cmd *cobra.Command, cfg *config.Config) erro
 	if cfg.DisableVMIController, err = getBool(FlagDisableVmiController); err != nil {
 		return err
 	}
-	if cfg.LoadbalancerNetwork, err = getStr(FlagLoadbalancerNetwork); err != nil {
-		return err
-	}
 	if cfg.ShowFullHelpOnError, err = getBool(FlagShowFullHelpOnError); err != nil {
 		return err
 	}
@@ -174,16 +170,6 @@ func SyncAndValidateHarvesterConfig(cmd *cobra.Command, cfg *config.Config) erro
 	// 6. Strict Validation: Node Exclude IP Ranges
 	if err := validateAndParseNodeExcludeIPRanges(cfg); err != nil {
 		return err
-	}
-
-	// 7. Strict Validation: Loadbalancer Network
-	// If the user provided a value, it MUST be valid.
-	if cfg.LoadbalancerNetwork != "" {
-		normalized, err := NormalizeNetworkName(NetworkTypeLB, cfg.LoadbalancerNetwork)
-		if err != nil {
-			return fmt.Errorf("invalid configuration for --%s: %w", FlagLoadbalancerNetwork, err)
-		}
-		cfg.LoadbalancerNetwork = normalized
 	}
 
 	logrus.Infof("%s effective configurations: %s", HarvesterCloudProvider, GetCurrentConfigString(cfg))

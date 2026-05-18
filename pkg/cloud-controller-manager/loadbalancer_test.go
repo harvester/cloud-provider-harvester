@@ -97,27 +97,13 @@ func Test_patchLB_Priority(t *testing.T) {
 	tests := []struct {
 		name                string
 		mgmtNetwork         string
-		lbNetwork           string
 		initialAnnotations  map[string]string
 		expectedAnnotations map[string]string
 	}{
 		{
-			name:               "Both networks set: normalization and application",
+			name:               "Management networks sets: normalization and application",
 			mgmtNetwork:        "harvester-mgmt/vlan-100",
-			lbNetwork:          "custom-vlan",
 			initialAnnotations: map[string]string{},
-			expectedAnnotations: map[string]string{
-				utils.AnnotationKeyGuestClusterNetworkNameOnLB:       "default/custom-vlan",
-				utils.AnnotationKeyGuestClusterManagementNetworkOnLB: "harvester-mgmt/vlan-100",
-			},
-		},
-		{
-			name:        "LB network empty: existing LB annotation is stripped",
-			mgmtNetwork: "harvester-mgmt/vlan-100",
-			lbNetwork:   "",
-			initialAnnotations: map[string]string{
-				utils.AnnotationKeyGuestClusterNetworkNameOnLB: "too/many/slashes",
-			},
 			expectedAnnotations: map[string]string{
 				utils.AnnotationKeyGuestClusterManagementNetworkOnLB: "harvester-mgmt/vlan-100",
 			},
@@ -125,7 +111,6 @@ func Test_patchLB_Priority(t *testing.T) {
 		{
 			name:               "Management network normalization: bare name to default namespace",
 			mgmtNetwork:        "mgmt-vlan",
-			lbNetwork:          "",
 			initialAnnotations: map[string]string{},
 			expectedAnnotations: map[string]string{
 				utils.AnnotationKeyGuestClusterManagementNetworkOnLB: "default/mgmt-vlan",
@@ -134,7 +119,6 @@ func Test_patchLB_Priority(t *testing.T) {
 		{
 			name:        "Management network empty: existing mgmt annotation is stripped",
 			mgmtNetwork: "",
-			lbNetwork:   "",
 			initialAnnotations: map[string]string{
 				utils.AnnotationKeyGuestClusterManagementNetworkOnLB: "default/mgmt-vlan",
 			},
@@ -143,7 +127,6 @@ func Test_patchLB_Priority(t *testing.T) {
 		{
 			name:        "Invalid global config: results in stripped annotations",
 			mgmtNetwork: "invalid/global/net/too/deep",
-			lbNetwork:   "",
 			initialAnnotations: map[string]string{
 				utils.AnnotationKeyGuestClusterManagementNetworkOnLB: "old-val",
 			},
@@ -152,7 +135,6 @@ func Test_patchLB_Priority(t *testing.T) {
 		{
 			name:        "Preservation: unrelated annotations remain untouched",
 			mgmtNetwork: "",
-			lbNetwork:   "",
 			initialAnnotations: map[string]string{
 				"harvesterhci.io/other": "important-data",
 			},
@@ -163,9 +145,8 @@ func Test_patchLB_Priority(t *testing.T) {
 		{
 			name:        "Malformed input: validation failure leads to removal",
 			mgmtNetwork: "",
-			lbNetwork:   "",
 			initialAnnotations: map[string]string{
-				utils.AnnotationKeyGuestClusterNetworkNameOnLB: "namespace/",
+				utils.AnnotationKeyGuestClusterManagementNetworkOnLB: "namespace/",
 			},
 			expectedAnnotations: map[string]string{},
 		},
@@ -176,15 +157,12 @@ func Test_patchLB_Priority(t *testing.T) {
 			// Setup a clean config for every sub-test to avoid side-effects
 			currentCfg := cfg.GetConfig()
 			oldMgmt := currentCfg.ManagementNetwork
-			oldLB := currentCfg.LoadbalancerNetwork
 
 			currentCfg.ManagementNetwork = tt.mgmtNetwork
-			currentCfg.LoadbalancerNetwork = tt.lbNetwork
 
 			// Cleanup after each subtest
 			defer func() {
 				currentCfg.ManagementNetwork = oldMgmt
-				currentCfg.LoadbalancerNetwork = oldLB
 			}()
 
 			lb := &lbv1.LoadBalancer{

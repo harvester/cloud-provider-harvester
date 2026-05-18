@@ -18,7 +18,6 @@ func getCommandAndFlag() (*cobra.Command, *flag.FlagSet) {
 	f.String(FlagManagementNetwork, "", "")
 	f.String(FlagNodeIPCIDR, "", "")
 	f.Bool(FlagDisableVmiController, false, "")
-	f.String(FlagLoadbalancerNetwork, "", "")
 	f.Bool(FlagShowFullHelpOnError, false, "")
 	f.StringSlice(FlagCloudProviderControllers, []string{}, "")
 	f.StringSlice(FlagNodeExcludeIPRanges, []string{}, "")
@@ -68,7 +67,6 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 				FlagManagementNetwork:    "harvester-public/vlan100",
 				FlagNodeIPCIDR:           "192.168.0.0/24",
 				FlagDisableVmiController: true,
-				FlagLoadbalancerNetwork:  "",
 				FlagShowFullHelpOnError:  true,
 			},
 			sliceFlags: map[string][]string{
@@ -84,7 +82,6 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 					NodeIPCIDR:               "192.168.0.0/24",
 					NodeExcludeIPRanges:      []string{},
 					DisableVMIController:     true,
-					LoadbalancerNetwork:      "",
 					ShowFullHelpOnError:      true,
 				},
 				lenNodeIPCIDRPPrefixes: 1,
