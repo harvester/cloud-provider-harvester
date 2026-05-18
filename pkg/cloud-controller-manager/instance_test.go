@@ -45,7 +45,6 @@ func getCommandAndFlag(mgmtNetwork, cidrRanges string, excludeList []string) (*c
 	f.String(utils.FlagManagementNetwork, mgmtNetwork, "")
 	f.String(utils.FlagNodeIPCIDR, cidrRanges, "")
 	f.Bool(utils.FlagDisableVmiController, false, "")
-	f.String(utils.FlagLoadbalancerNetwork, "", "")
 	f.Bool(utils.FlagShowFullHelpOnError, false, "")
 	f.StringSlice(utils.FlagCloudProviderControllers, []string{}, "")
 	f.StringSlice(utils.FlagNodeExcludeIPRanges, excludeList, "")

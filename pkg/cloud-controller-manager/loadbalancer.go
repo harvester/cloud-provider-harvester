@@ -239,31 +239,6 @@ func patchLB(lb *lbv1.LoadBalancer) {
 		lb.Annotations = make(map[string]string)
 	}
 
-	// PRIORITY 1 (Highest): Global Load Balancer Target Network Override
-	// This is a global administrative override from the cloud-provider config.
-	// If 'loadbalancer-network' is set in the global configuration, it takes
-	// absolute precedence over any other network selection logic.
-	//
-	// Note: To maintain consistency, we sync this global setting into the LB
-	// annotation. If the global config is empty or invalid, we purge the
-	// annotation to ensure no "stale" or unauthorized network requests persist.
-	if lbnetwork, ok := cfg.GetConfig().GetLoadbalancerNetwork(); ok {
-		target, err := utils.NormalizeNetworkName(utils.NetworkTypeLB, lbnetwork)
-		if err != nil {
-			// If the global config provides a network name that cannot be normalized,
-			// we treat it as a configuration error and clear the annotation to prevent
-			// provisioning on an undefined network.
-			logrus.Warnf("LoadBalancer %s/%s: global loadbalancer-network config error: %v. Clearing annotation.", lb.Namespace, lb.Name, err)
-			delete(lb.Annotations, utils.AnnotationKeyGuestClusterNetworkNameOnLB)
-		} else {
-			lb.Annotations[utils.AnnotationKeyGuestClusterNetworkNameOnLB] = target
-		}
-	} else {
-		// If the global configuration is not provided, we strictly remove any
-		// existing network annotations to prevent unauthorized network selection.
-		delete(lb.Annotations, utils.AnnotationKeyGuestClusterNetworkNameOnLB)
-	}
-
 	// PRIORITY 2 (Medium): Global Management Network
 	// This acts as the authoritative default provided by the cloud-provider config.
 	// It is used if the user hasn't specified a valid override.

@@ -42,7 +42,6 @@ type Config struct {
 	ManagementNetwork    string
 	NodeIPCIDR           string
 	NodeExcludeIPRanges  []string
-	LoadbalancerNetwork  string
 	DisableVMIController bool
 	ShowFullHelpOnError  bool
 
@@ -82,16 +81,6 @@ var instance = &Config{}
 func (c *Config) GetManagementNetwork() (string, bool) {
 	if c != nil && c.ManagementNetwork != "" {
 		return c.ManagementNetwork, true
-	}
-	return "", false
-}
-
-// GetLoadbalancerNetwork returns the configured load balancer network name.
-// The boolean return value indicates whether the configuration is effectively
-// set by the user with a valid (non-empty) value.
-func (c *Config) GetLoadbalancerNetwork() (string, bool) {
-	if c != nil && c.LoadbalancerNetwork != "" {
-		return c.LoadbalancerNetwork, true
 	}
 	return "", false
 }
