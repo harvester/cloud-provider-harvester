@@ -141,6 +141,9 @@ func getNodeAddresses(node *v1.Node, vmi *kubevirtv1.VirtualMachineInstance, cfg
 	getHostNameAddress := func() v1.NodeAddress {
 		return v1.NodeAddress{Type: v1.NodeHostName, Address: node.Name}
 	}
+
+	// Returns the hostname address anyway.
+	// Fallback: In case of error, logs the IP fetching failure but still returns the hostname.
 	getNodeAddressWithHostNameOnly := func() []v1.NodeAddress {
 		return []v1.NodeAddress{getHostNameAddress()}
 	}

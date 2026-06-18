@@ -140,6 +140,69 @@ func Test_getNodeAddresses(t *testing.T) {
 			},
 		},
 		{
+			name: "Priority 1: Failure: Invalid Annotation (Strict Mode - mismatch results in all IPs being marked as ExternalIP; no InternalIP)",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: nodeName,
+					Annotations: map[string]string{
+						// key: "alpha.kubernetes.io/provided-node-ip",
+						api.AnnotationAlphaProvidedIPAddr: "invalid-ip-string",
+					},
+				},
+			},
+			vmi: stubMultusVMI(nic0, "mgmt", []string{network120IP, networkDefault100IP}),
+			output: []v1.NodeAddress{
+				{Type: v1.NodeExternalIP, Address: network120IP},
+				{Type: v1.NodeExternalIP, Address: networkDefault100IP},
+				{Type: v1.NodeHostName, Address: nodeName},
+			},
+		},
+
+		{
+			name:        "Priority 2: CIDR Mode (Strict Filtering), exclude via IP",
+			cidrRanges:  subnet130,
+			excludeList: []string{network130IPStorage},
+			node:        &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}},
+			vmi:         stubMultusVMI(nic0, "any/net", []string{network130IP, network130IPStorage}),
+			output: []v1.NodeAddress{
+				{Type: v1.NodeInternalIP, Address: network130IP},
+				// {Type: v1.NodeExternalIP, Address: network130IPStorage}, // filtered from external
+				{Type: v1.NodeHostName, Address: nodeName},
+			},
+		},
+		{
+			name:        "Priority 2: CIDR Mode, exclude via IP prefix",
+			excludeList: []string{"192.168.0.0/16"},
+			cidrRanges:  "192.168.0.0/16",
+			node:        &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}},
+			vmi:         stubMultusVMI(nic0, "mgmt", []string{networkDefault100IP, network120IP, network130IP, network130IPStorage}),
+			output: []v1.NodeAddress{
+				{Type: v1.NodeInternalIP, Address: networkDefault100IP}, // only first is marked and others are filtered
+				{Type: v1.NodeHostName, Address: nodeName},
+			},
+		},
+		{
+			name:       "Priority 2: CIDR Mode, node ip CIDR mismatch, all available IPs are marked as external",
+			cidrRanges: subnet200,
+			node:       &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}},
+			vmi:        stubMultusVMI(nic0, "mgmt", []string{networkDefault100IP, network120IP}),
+			output: []v1.NodeAddress{
+				{Type: v1.NodeExternalIP, Address: networkDefault100IP},
+				{Type: v1.NodeExternalIP, Address: network120IP},
+				{Type: v1.NodeHostName, Address: nodeName},
+			},
+		},
+		{
+			name: "Priority 3: Fallback Discovery (Dual Stack)",
+			node: &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}},
+			vmi:  stubMultusVMI(nic0, "default/none", []string{networkDefault100IP, "fd00::1"}),
+			output: []v1.NodeAddress{
+				{Type: v1.NodeInternalIP, Address: networkDefault100IP},
+				{Type: v1.NodeInternalIP, Address: "fd00::1"},
+				{Type: v1.NodeHostName, Address: nodeName},
+			},
+		},
+		{
 			name:              "Priority 3: Logic: Exclusion via Node Annotation (Fallback Mode)",
 			managementNetwork: mgmtNetwork,
 			node: &v1.Node{
@@ -155,91 +218,6 @@ func Test_getNodeAddresses(t *testing.T) {
 			output: []v1.NodeAddress{
 				{Type: v1.NodeInternalIP, Address: networkDefault100IP},
 				// `network120IP` is excluded from InternalIP and ExternalIP
-				{Type: v1.NodeHostName, Address: nodeName},
-			},
-		},
-		{
-			name:       "Priority 2: CIDR Mode (Strict Filtering)",
-			cidrRanges: subnet130,
-			node:       &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}},
-			vmi:        stubMultusVMI(nic0, "any/net", []string{networkDefault100IP, network130IP}),
-			output: []v1.NodeAddress{
-				{Type: v1.NodeExternalIP, Address: networkDefault100IP},
-				{Type: v1.NodeInternalIP, Address: network130IP},
-				{Type: v1.NodeHostName, Address: nodeName},
-			},
-		},
-		{
-			name:        "Priority 2: CIDR Mode (Strict Filtering), storage ip is also in node ip subnet which is filtered",
-			cidrRanges:  subnet130,
-			excludeList: []string{network130IPStorage},
-			node:        &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}},
-			vmi:         stubMultusVMI(nic0, "any/net", []string{network130IP, network130IPStorage}),
-			output: []v1.NodeAddress{
-				{Type: v1.NodeInternalIP, Address: network130IP},
-				// {Type: v1.NodeInternalIP, Address: network130IPStorage}, // filtered from internal
-				{Type: v1.NodeHostName, Address: nodeName},
-			},
-		},
-		{
-			name:        "Priority 2: CIDR Mode (Strict Filtering), exclude a sub group from cidr range",
-			excludeList: []string{network120IP}, // a sub group of following cidr range
-			cidrRanges:  "192.168.0.0/16",
-			node:        &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}},
-			vmi:         stubMultusVMI(nic0, "mgmt", []string{networkDefault100IP, network120IP}),
-			output: []v1.NodeAddress{
-				{Type: v1.NodeInternalIP, Address: networkDefault100IP},
-				// {Type: v1.NodeInternalIP, Address: network120IP}, // filtered from internal
-				{Type: v1.NodeHostName, Address: nodeName},
-			},
-		},
-		{
-			name: "Priority 3: Fallback Discovery (Dual Stack)",
-			node: &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}},
-			vmi:  stubMultusVMI(nic0, "default/none", []string{networkDefault100IP, "fd00::1"}),
-			output: []v1.NodeAddress{
-				{Type: v1.NodeInternalIP, Address: networkDefault100IP},
-				{Type: v1.NodeInternalIP, Address: "fd00::1"},
-				{Type: v1.NodeHostName, Address: nodeName},
-			},
-		},
-		{
-			name: "Failure: Invalid Annotation (Strict Mode - Mismatch results in all IPs are marked as ExternalIP, no InternalIP)",
-			node: &v1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: nodeName,
-					Annotations: map[string]string{
-						// key: "alpha.kubernetes.io/provided-node-ip",
-						api.AnnotationAlphaProvidedIPAddr: "invalid-ip-string",
-					},
-				},
-			},
-			vmi: stubMultusVMI(nic0, "mgmt", []string{networkDefault100IP}),
-			output: []v1.NodeAddress{
-				{Type: v1.NodeExternalIP, Address: networkDefault100IP},
-				{Type: v1.NodeHostName, Address: nodeName},
-			},
-		},
-		{
-			name:        "Offensive: node exclude list is so big that it excludes all available IPs",
-			excludeList: []string{"192.168.0.0/16"},
-			cidrRanges:  "192.168.0.0/16",
-			node:        &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}},
-			vmi:         stubMultusVMI(nic0, "mgmt", []string{networkDefault100IP, network120IP}),
-			output: []v1.NodeAddress{
-				// {Type: v1.NodeExternalIP, Address: networkDefault100IP},
-				// {Type: v1.NodeExternalIP, Address: network120IP},
-				{Type: v1.NodeHostName, Address: nodeName},
-			},
-		},
-		{
-			name:       "Mismatch: node ip CIDR mismatch, all available IPs are marked as external",
-			cidrRanges: subnet200,
-			node:       &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}},
-			vmi:        stubMultusVMI(nic0, "mgmt", []string{networkDefault100IP, network120IP}),
-			output: []v1.NodeAddress{
-				{Type: v1.NodeExternalIP, Address: networkDefault100IP},
-				{Type: v1.NodeExternalIP, Address: network120IP},
 				{Type: v1.NodeHostName, Address: nodeName},
 			},
 		},
@@ -449,6 +427,9 @@ func Test_resolveNodeIPs(t *testing.T) {
 		v4Prefix = netip.MustParsePrefix("10.0.0.0/24")
 		v6Prefix = netip.MustParsePrefix("fd00::/64")
 
+		v4Addr1Prefix = netip.MustParsePrefix(v4Str1 + "/32")
+		v4Addr2Prefix = netip.MustParsePrefix(v4Str2 + "/32")
+
 		v4PrefixList  = []netip.Prefix{v4Prefix}
 		dualStackList = []netip.Prefix{v4Prefix, v6Prefix}
 	)
@@ -486,7 +467,37 @@ func Test_resolveNodeIPs(t *testing.T) {
 			},
 			expected: []v1.NodeAddress{
 				{Type: v1.NodeInternalIP, Address: v4Str1},
-				{Type: v1.NodeInternalIP, Address: v4Str2},
+				{Type: v1.NodeExternalIP, Address: v4Str2}, // second IP on the same CIDR is still treated as external
+				{Type: v1.NodeInternalIP, Address: v6Str1},
+				{Type: v1.NodeExternalIP, Address: extStr1},
+			},
+		},
+		{
+			name: "Priority 2: ModeNodeIPCIDR (Multi-IP Policy), filter v4addr2",
+			ips:  []netip.Addr{v4addr1, v4addr2, v6addr, extAddr},
+			ctx: AddressContext{
+				Mode:                  ModeNodeIPCIDR,
+				NodeIPCIDRPrefixes:    dualStackList,
+				NodeExcludeIPPrefixes: []netip.Prefix{v4Addr2Prefix},
+			},
+			expected: []v1.NodeAddress{
+				{Type: v1.NodeInternalIP, Address: v4Str1},
+				// {Type: v1.NodeExternalIP, Address: v4Str2}, // second IP is not exposed
+				{Type: v1.NodeInternalIP, Address: v6Str1},
+				{Type: v1.NodeExternalIP, Address: extStr1},
+			},
+		},
+		{
+			name: "Priority 2: ModeNodeIPCIDR (Multi-IP Policy), cannot filter internalIP v4addr1",
+			ips:  []netip.Addr{v4addr1, v4addr2, v6addr, extAddr},
+			ctx: AddressContext{
+				Mode:                  ModeNodeIPCIDR,
+				NodeIPCIDRPrefixes:    dualStackList,
+				NodeExcludeIPPrefixes: []netip.Prefix{v4Addr1Prefix},
+			},
+			expected: []v1.NodeAddress{
+				{Type: v1.NodeInternalIP, Address: v4Str1}, // cannot filter internal IP
+				{Type: v1.NodeExternalIP, Address: v4Str2},
 				{Type: v1.NodeInternalIP, Address: v6Str1},
 				{Type: v1.NodeExternalIP, Address: extStr1},
 			},

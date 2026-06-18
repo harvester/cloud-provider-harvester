@@ -225,12 +225,25 @@ func categorizeByProvidedIP(addrs []netip.Addr, providedIP string) CandidateAddr
 
 func categorizeByCIDR(addrs []netip.Addr, prefixes []netip.Prefix) CandidateAddresses {
 	res := make(CandidateAddresses, 0, len(addrs))
+	// The first IPv4 address and the first IPv6 address that match any prefix are marked as InternalIP.
+	// This avoids misclassifying additional addresses (for example, load balancer VIPs) on the same subnet
+	// as InternalIP when they are bound to the target network (for example, the mgmt network).
+	hasInternalIPv4, hasInternalIPv6 := false, false
 	for _, addr := range addrs {
 		ipType := v1.NodeExternalIP
-		for _, pfx := range prefixes {
-			if pfx.Contains(addr) {
-				ipType = v1.NodeInternalIP
-				break
+		isV4 := addr.Is4()
+		needsInternal := (isV4 && !hasInternalIPv4) || (!isV4 && !hasInternalIPv6)
+		if needsInternal {
+			for _, pfx := range prefixes {
+				if pfx.Contains(addr) {
+					ipType = v1.NodeInternalIP
+					if isV4 {
+						hasInternalIPv4 = true
+					} else {
+						hasInternalIPv6 = true
+					}
+					break
+				}
 			}
 		}
 		res = append(res, CandidateAddress{
@@ -270,6 +283,11 @@ func categorizeByFallback(addrs []netip.Addr) CandidateAddresses {
 func filterByCIDRPolicy(addrs CandidateAddresses, prefixes []netip.Prefix) CandidateAddresses {
 	final := make(CandidateAddresses, 0, len(addrs))
 	for _, ca := range addrs {
+		if ca.NodeAddr.Type == v1.NodeInternalIP {
+			final = append(final, ca)
+			continue
+		}
+		// only filter ExternalIP
 		match := false
 		for _, pfx := range prefixes {
 			if pfx.Contains(ca.Addr) {
