@@ -225,8 +225,6 @@ github.com/harvester/harvester/pkg/apis/harvesterhci.io
 github.com/harvester/harvester/pkg/apis/harvesterhci.io/v1beta1
 github.com/harvester/harvester/pkg/builder
 github.com/harvester/harvester/pkg/generated/controllers/harvesterhci.io/v1beta1
-github.com/harvester/harvester/pkg/generated/controllers/k8s.cni.cncf.io
-github.com/harvester/harvester/pkg/generated/controllers/k8s.cni.cncf.io/v1
 github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io
 github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1
 github.com/harvester/harvester/pkg/generated/controllers/longhorn.io/v1beta2
@@ -235,8 +233,8 @@ github.com/harvester/harvester/pkg/settings
 github.com/harvester/harvester/pkg/util
 github.com/harvester/harvester/pkg/util/network
 github.com/harvester/harvester/pkg/util/supportbundle
-# github.com/harvester/harvester-load-balancer v1.7.1
-## explicit; go 1.25.2
+# github.com/harvester/harvester-load-balancer v1.8.0
+## explicit; go 1.25.7
 github.com/harvester/harvester-load-balancer/pkg/apis/loadbalancer.harvesterhci.io
 github.com/harvester/harvester-load-balancer/pkg/apis/loadbalancer.harvesterhci.io/v1alpha1
 github.com/harvester/harvester-load-balancer/pkg/apis/loadbalancer.harvesterhci.io/v1beta1
@@ -244,6 +242,10 @@ github.com/harvester/harvester-load-balancer/pkg/config
 github.com/harvester/harvester-load-balancer/pkg/controller/loadbalancer
 github.com/harvester/harvester-load-balancer/pkg/generated/controllers/discovery.k8s.io
 github.com/harvester/harvester-load-balancer/pkg/generated/controllers/discovery.k8s.io/v1
+github.com/harvester/harvester-load-balancer/pkg/generated/controllers/k8s.cni.cncf.io
+github.com/harvester/harvester-load-balancer/pkg/generated/controllers/k8s.cni.cncf.io/v1
+github.com/harvester/harvester-load-balancer/pkg/generated/controllers/kubevirt.io
+github.com/harvester/harvester-load-balancer/pkg/generated/controllers/kubevirt.io/v1
 github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io
 github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io/v1alpha1
 github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io/v1beta1
