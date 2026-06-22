@@ -1,5 +1,5 @@
 /*
-Copyright 2026 Rancher Labs, Inc.
+Copyright 2026 SUSE, LLC.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -44,6 +44,8 @@ var (
 	VirtualMachineRestoreResourceName         = "virtualmachinerestores"
 	VirtualMachineTemplateResourceName        = "virtualmachinetemplates"
 	VirtualMachineTemplateVersionResourceName = "virtualmachinetemplateversions"
+	VolumeRemoteBackupResourceName            = "volumeremotebackups"
+	VolumeRemoteRestoreResourceName           = "volumeremoterestores"
 )
 
 // SchemeGroupVersion is group version used to register these objects
@@ -99,6 +101,10 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&VirtualMachineTemplateList{},
 		&VirtualMachineTemplateVersion{},
 		&VirtualMachineTemplateVersionList{},
+		&VolumeRemoteBackup{},
+		&VolumeRemoteBackupList{},
+		&VolumeRemoteRestore{},
+		&VolumeRemoteRestoreList{},
 	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil

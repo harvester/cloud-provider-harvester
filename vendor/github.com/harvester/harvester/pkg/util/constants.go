@@ -10,6 +10,7 @@ const (
 	AnnotationMigrationState            = prefix + "/migrationState"
 	AnnotationTimestamp                 = prefix + "/timestamp"
 	AnnotationVolumeClaimTemplates      = prefix + "/volumeClaimTemplates"
+	AnnotationWaitingStorageMigration   = prefix + "/waitingStorageMigration"
 	AnnotationUpgradePatched            = prefix + "/upgrade-patched"
 	AnnotationImageID                   = prefix + "/imageId"
 	AnnotationReservedMemory            = prefix + "/reservedMemory"
@@ -20,7 +21,6 @@ const (
 	AnnotationSVMBackupID               = prefix + "/svmbackupId"
 	AnnotationSVMBackupSkipCronCheck    = prefix + "/svmbackupSkipCronCheck"
 	AnnotationGoldenImage               = prefix + "/goldenImage"
-	AnnotationVolForVM                  = prefix + "/volumeForVirtualMachine"
 	LabelImageDisplayName               = prefix + "/imageDisplayName"
 	LabelSetting                        = prefix + "/setting"
 	LabelVMName                         = prefix + "/vmName"
@@ -29,6 +29,7 @@ const (
 	LabelVMCreator                      = prefix + "/creator"
 	LabelVMimported                     = "migration.harvesterhci.io/imported"
 	LabelNodeNameKey                    = "kubevirt.io/nodeName"
+	LabelKubeVirtPersistentState        = "persistent-state-for" // KubeVirt-managed label for persistent state PVCs
 	LabelHarvesterUpgrade               = prefix + "/upgrade"
 	LabelHarvesterUpgradeState          = prefix + "/upgradeState"
 	LabelHarvesterUpgradeComponent      = prefix + "/upgradeComponent"
@@ -39,8 +40,10 @@ const (
 	AnnotationMacAddressName            = prefix + "/mac-address"
 	AnnotationEnableCPUAndMemoryHotplug = prefix + "/enableCPUAndMemoryHotplug"
 
-	AnnotationSkipRancherLoggingAddonWebhookCheck = prefix + "/skipRancherLoggingAddonWebhookCheck"
-	AnnotationSkipDeschedulerAddonWebhookCheck    = prefix + "/skipDeschedulerAddonWebhookCheck"
+	AnnotationSkipRancherLoggingAddonWebhookCheck       = prefix + "/skipRancherLoggingAddonWebhookCheck"
+	AnnotationSkipDeschedulerAddonWebhookCheck          = prefix + "/skipDeschedulerAddonWebhookCheck"
+	AnnotationSkipPCIDevicesControllerAddonWebhookCheck = prefix + "/skipPCIDevicesControllerAddonWebhookCheck"
+	AnnotationSkipNvidiaDriverToolkitAddonWebhookCheck  = prefix + "/skipNvidiaDriverToolkitAddonWebhookCheck"
 
 	// AnnotationSkipResourceQuotaAutoScaling is used to disable to resourcequota auto scaling
 	AnnotationSkipResourceQuotaAutoScaling = prefix + "/skipResourceQuotaAutoScaling"
@@ -103,6 +106,8 @@ const (
 	HarvesterSystemNamespaceName        = "harvester-system"
 	RancherLoggingName                  = "rancher-logging"
 	DeschedulerName                     = "descheduler"
+	PCIDevicesControllerName            = "pcidevices-controller"
+	NvidiaDriverToolkitName             = "nvidia-driver-toolkit"
 	RancherMonitoringPrometheus         = "rancher-monitoring-prometheus"
 	RancherMonitoringAlertmanager       = "rancher-monitoring-alertmanager"
 	RancherMonitoring                   = "rancher-monitoring"
@@ -114,6 +119,7 @@ const (
 	RancherMonitoringName               = "rancher-monitoring"
 	CattleMonitoringSystemNamespaceName = "cattle-monitoring-system"
 	HarvesterVMImportController         = "vm-import-controller-harvester-vm-import-controller"
+	KubeOVNOperatorName                 = "kubeovn-operator"
 	// kubevirt create a CRD object automatically: type kubevirt, name kubevirt, namespace: harvester-system
 	// this object stores all kubevirt related configuration
 	KubeVirtObjectName = "kubevirt"
@@ -134,8 +140,6 @@ const (
 	// CDI constants
 	CSIProvisionerLVM      = "lvm.driver.harvesterhci.io"
 	CSIProvisionerLonghorn = "driver.longhorn.io"
-	KindVolumeImportSource = "VolumeImportSource"
-	ImportSourceFSBlank    = "filesystem-blank-source"
 	LVMTopologyNodeKey     = "topology.lvm.csi/node"
 
 	// CSI constants
@@ -183,14 +187,36 @@ const (
 
 	RKEControlPlaneRoleLabel = "rke.cattle.io/control-plane-role"
 
-	LabelMaintainModeStrategy                          = prefix + "/maintain-mode-strategy"
-	AnnotationMaintainModeStrategyNodeName             = prefix + "/maintain-mode-strategy-node-name"
+	LabelMaintainModeStrategy              = prefix + "/maintain-mode-strategy"
+	AnnotationMaintainModeStrategyNodeName = prefix + "/maintain-mode-strategy-node-name"
+
 	MaintainModeStrategyMigrate                        = "Migrate"
 	MaintainModeStrategyShutdownAndRestartAfterEnable  = "ShutdownAndRestartAfterEnable"
 	MaintainModeStrategyShutdownAndRestartAfterDisable = "ShutdownAndRestartAfterDisable"
 	MaintainModeStrategyShutdown                       = "Shutdown"
+	MaintainModeStrategyDefault                        = MaintainModeStrategyMigrate
 	HarvesterReportedConditionKey                      = prefix + "/condition"
 	HarvesterReportedConditionMessageKey               = prefix + "/condition-message"
+)
+
+var (
+	MaintenanceModeStrategyValidValues = []string{
+		MaintainModeStrategyMigrate,
+		MaintainModeStrategyShutdownAndRestartAfterEnable,
+		MaintainModeStrategyShutdownAndRestartAfterDisable,
+		MaintainModeStrategyShutdown,
+	}
+
+	MaintainModeStrategyShutdownValues = []string{
+		MaintainModeStrategyShutdownAndRestartAfterEnable,
+		MaintainModeStrategyShutdownAndRestartAfterDisable,
+		MaintainModeStrategyShutdown,
+	}
+
+	DefaultHarvesterNamespaceWhiteList = []string{"calico-apiserver", "calico-system", "cattle-alerting", "cattle-csp-adapter-system", "cattle-elemental-system", "cattle-epinio-system", "cattle-externalip-system", "cattle-fleet-local-system", "cattle-fleet-system", "cattle-gatekeeper-system", "cattle-global-data", "cattle-global-nt", "cattle-impersonation-system", "cattle-istio", "cattle-istio-system", "cattle-logging", "cattle-logging-system", "cattle-monitoring-system", "cattle-neuvector-system", "cattle-prometheus", "cattle-provisioning-capi-system", "cattle-resources-system", "cattle-sriov-system", "cattle-system", "cattle-ui-plugin-system", "cattle-windows-gmsa-system", "cert-manager", "cis-operator-system", "fleet-default", "ingress-nginx", "istio-system", "kube-node-lease", "kube-public", "kube-system", "longhorn-system", "rancher-alerting-drivers", "security-scan", "tigera-operator", "harvester-system", "harvester-public", "rancher-vcluster", "cattle-dashboards", "fleet-local", "local", "forklift"}
+)
+
+const (
 	// s3 backup target constants
 	AWSAccessKey       = "AWS_ACCESS_KEY_ID"
 	AWSSecretKey       = "AWS_SECRET_ACCESS_KEY"
@@ -205,9 +231,9 @@ const (
 	LabelCPUManagerUpdatePolicy      = prefix + "/cpu-manager-update-policy"
 	LabelCPUManagerExitCode          = prefix + "/cpu-manager-exit-code"
 
-	VClusterNamespace          = "rancher-vcluster"
-	LablelVClusterAppNameKey   = "app"
-	LablelVClusterAppNameValue = "vcluster"
+	VClusterNamespace         = "rancher-vcluster"
+	LabelAppNameKey           = "app"
+	LabelVClusterAppNameValue = "vcluster"
 
 	StorageClassHarvesterLonghorn  = "harvester-longhorn"  // the initial & default storageclass
 	StorageClassLonghornStatic     = "longhorn-static"     // internal storageclass used for management of existing Longhorn volumes
@@ -220,7 +246,6 @@ const (
 	HelmReleaseNamespaceAnnotation = "meta.helm.sh/release-namespace"
 
 	// moved from nodedrain_controller for public usage
-	ContainerDiskOrCDRomKey             = "CDRomOrContainerDiskPresent"
 	NodeSchedulingRequirementsNotMetKey = "NodeSchedulingRequirementsNotMet"
 	MaintainModeStrategyKey             = "MaintainModeStrategy"
 	LastHealthyReplicaKey               = "LastHealthyReplica"
@@ -237,6 +262,17 @@ const (
 
 	StorageNetworkNetAttachDefPrefix    = "storagenetwork-"
 	StorageNetworkNetAttachDefNamespace = HarvesterSystemNamespaceName
+
+	RWXNetworkAnnotation       = "rwx-network.settings.harvesterhci.io"
+	RWXHashNetworkAnnotation   = RWXNetworkAnnotation + "/hash"
+	RWXNadNetworkAnnotation    = RWXNetworkAnnotation + "/net-attach-def"
+	RWXOldNadNetworkAnnotation = RWXNetworkAnnotation + "/old-net-attach-def"
+	RWXNetworkInitializedAnno  = RWXNetworkAnnotation + "/initialized"
+
+	RWXHashNetworkLabel = RWXHashNetworkAnnotation
+
+	RWXNetworkNetAttachDefPrefix    = "rwx-network-"
+	RWXNetworkNetAttachDefNamespace = HarvesterSystemNamespaceName
 
 	HarvesterCRDManagedChart         = "harvester-crd"
 	HarvesterManagedChart            = "harvester"
@@ -266,4 +302,10 @@ const (
 	AddonExperimentalLabel = AddonPrefix + "/experimental"
 
 	HarvesterUpgradeComponentRepo = "repo"
+
+	// PSS controller labels
+	HarvesterManagedPSSKey   = "pss.harvesterhci.io/managed"
+	HarvesterManagedPSSValue = "true"
+
+	GoArchArm64 = "arm64"
 )
