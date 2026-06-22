@@ -37,7 +37,7 @@ require (
 	github.com/harvester/harvester v1.8.0
 	github.com/harvester/harvester-load-balancer v1.8.0
 	github.com/rancher/wrangler/v3 v3.2.4
-	github.com/sirupsen/logrus v1.9.3
+	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
 	k8s.io/api v0.34.1
