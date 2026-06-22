@@ -39,7 +39,7 @@ require (
 	github.com/rancher/wrangler/v3 v3.2.4
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.9
+	github.com/spf13/pflag v1.0.10
 	k8s.io/api v0.34.1
 	k8s.io/apimachinery v0.34.1
 	k8s.io/client-go v12.0.0+incompatible
