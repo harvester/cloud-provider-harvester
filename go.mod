@@ -1,6 +1,6 @@
 module github.com/harvester/harvester-cloud-provider
 
-go 1.25.7
+go 1.26.4
 
 replace (
 	github.com/google/gnostic-models v0.7.0 => github.com/google/gnostic-models v0.0.0-20250626140709-511df6b89d80
