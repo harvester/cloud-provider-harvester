@@ -2,7 +2,7 @@ module github.com/harvester/harvester-cloud-provider
 
 go 1.25.2
 
-toolchain go1.25.7
+toolchain go1.26.4
 
 replace (
 	github.com/google/gnostic-models v0.7.0 => github.com/google/gnostic-models v0.0.0-20250626140709-511df6b89d80
@@ -35,10 +35,12 @@ replace (
 )
 
 require (
+	github.com/google/go-cmp v0.7.0
 	github.com/harvester/harvester v1.7.1
 	github.com/harvester/harvester-load-balancer v1.7.1
 	github.com/rancher/wrangler/v3 v3.2.3-rc.3
 	github.com/sirupsen/logrus v1.9.3
+	github.com/spf13/cobra v1.9.1
 	github.com/spf13/pflag v1.0.6
 	k8s.io/api v0.34.0
 	k8s.io/apimachinery v0.34.0
@@ -85,7 +87,6 @@ require (
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/cel-go v0.26.0 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/handlers v1.5.2 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
@@ -132,7 +133,6 @@ require (
 	github.com/safchain/ethtool v0.5.10 // indirect
 	github.com/shirou/gopsutil/v3 v3.24.5 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/spf13/cobra v1.9.1 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/tevino/tcp-shaker v0.0.0-20191112104505-00eab0aefc80 // indirect
 	github.com/vishvananda/netlink v1.3.1-0.20250303224720-0e7078ed04c8 // indirect
