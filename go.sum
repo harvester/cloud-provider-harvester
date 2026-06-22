@@ -210,8 +210,8 @@ github.com/harvester/go-common v0.0.0-20260119194217-0f17176ce67e h1:0oo0OL30xJJ
 github.com/harvester/go-common v0.0.0-20260119194217-0f17176ce67e/go.mod h1:r0hTaF8ZSSJEN7slrEzeJ80H66MPy+xFv3aScrxhLGI=
 github.com/harvester/harvester v1.8.0 h1:jOb1Kzu5TlAZ+QT6XlAPftyppOrdEZL1UfhDUn2ix4s=
 github.com/harvester/harvester v1.8.0/go.mod h1:1vlg1+mB8OHb9Meu+kMVOO/sG9130RE6+y3V1u1TXk4=
-github.com/harvester/harvester-load-balancer v1.7.1 h1:IEQx3bdOAN4XsnFDPFf4hAn07NQN4Q3Kt7MkTrlPY9k=
-github.com/harvester/harvester-load-balancer v1.7.1/go.mod h1:W8pwH7qdgewE/GAdwckyTOhAnCZi7MtkVBu0SdkgWMU=
+github.com/harvester/harvester-load-balancer v1.8.0 h1:p7/CfqedCHGyNsvogXPaVR9tfMD+sxRXAO4HreRwTgU=
+github.com/harvester/harvester-load-balancer v1.8.0/go.mod h1:ITGcC3bjv1hB/6587bbKWoBLDVSaeyj17GRcOPIOmJg=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
 github.com/ianlancetaylor/demangle v0.0.0-20200824232613-28f6c0f3b639/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
 github.com/ianlancetaylor/demangle v0.0.0-20240312041847-bd984b5ce465/go.mod h1:gx7rwoVhcfuVKG5uya9Hs3Sxj7EIvldVofAWIUtGouw=

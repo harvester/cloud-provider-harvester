@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	ctlcniv1 "github.com/harvester/harvester/pkg/generated/controllers/k8s.cni.cncf.io/v1"
-	ctlkubevirtv1 "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1"
 	ctlcorev1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/core/v1"
 	"github.com/sirupsen/logrus"
 
 	lbv1 "github.com/harvester/harvester-load-balancer/pkg/apis/loadbalancer.harvesterhci.io/v1beta1"
 	"github.com/harvester/harvester-load-balancer/pkg/config"
 	ctldiscoveryv1 "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/discovery.k8s.io/v1"
+	ctlcniv1 "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/k8s.cni.cncf.io/v1"
+	ctlkubevirtv1 "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/kubevirt.io/v1"
 	ctllbv1 "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io/v1beta1"
 	"github.com/harvester/harvester-load-balancer/pkg/ipam"
 	lbpkg "github.com/harvester/harvester-load-balancer/pkg/lb"
@@ -38,6 +38,7 @@ var (
 	errNoAvailableIP               = errors.New("no available IP")
 	errNoRunningBackendServer      = errors.New("no running backend servers")
 	errAllBackendServersNotHealthy = errors.New("running backend servers are not probed as healthy")
+	errAllBackendServersNoIP       = errors.New("running backend servers have no IP")
 )
 
 type Handler struct {
@@ -145,7 +146,7 @@ func (h *Handler) handleError(lbCopy, lb *lbv1.LoadBalancer, err error) (*lbv1.L
 	if errors.Is(err, errNoMatchedIPPool) || errors.Is(err, errNoAvailableIP) || errors.Is(err, lbpkg.ErrWaitExternalIP) {
 		h.lbController.EnqueueAfter(lb.Namespace, lb.Name, 1*time.Second)
 		return h.updateStatusNotReturnError(lbCopy, lb, err)
-	} else if errors.Is(err, errNoRunningBackendServer) || errors.Is(err, errAllBackendServersNotHealthy) {
+	} else if errors.Is(err, errNoRunningBackendServer) || errors.Is(err, errAllBackendServersNotHealthy) || errors.Is(err, errAllBackendServersNoIP) {
 		// stop reconciler, wait vmi controller Enqueue() lb / health check go thread Enqueue()
 		return h.updateStatusNotReturnError(lbCopy, lb, err)
 	}
@@ -175,9 +176,13 @@ func (h *Handler) ensureVMLoadBalancer(lbCopy, lb *lbv1.LoadBalancer) (*lbv1.Loa
 	if err != nil {
 		return lb, err
 	}
-	lbCopy.Status.BackendServers = getServerAddress(servers)
+	lbCopy.Status.BackendServers = getServerAddress(servers.GetBackendServers())
 	if len(lbCopy.Status.BackendServers) == 0 {
-		return lb, errNoRunningBackendServer
+		if servers.GetMatchedBackendServerCount() == 0 {
+			return lb, errNoRunningBackendServer
+		}
+		// there are matched backend servers, but none of them have IP
+		return lb, errAllBackendServersNoIP
 	}
 
 	if lb.Spec.HealthCheck != nil && lb.Spec.HealthCheck.Port != 0 {
