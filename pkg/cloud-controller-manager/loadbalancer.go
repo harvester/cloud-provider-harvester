@@ -2,6 +2,7 @@ package ccm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"hash/crc32"
 	"strings"
@@ -116,8 +117,88 @@ func (l *LoadBalancerManager) getPrimaryService(service *v1.Service) (*v1.Servic
 	return primarySvc, nil
 }
 
+func (l *LoadBalancerManager) checkDHCPServiceInterface(service *v1.Service, nodes []*v1.Node) error {
+	if service.Annotations == nil || lbv1.IPAM(service.Annotations[utils.KeyIPAM]) != lbv1.DHCP {
+		return nil
+	}
+
+	serviceInterface := service.Annotations[utils.KeyKubevipServiceInterface]
+	if serviceInterface == "" {
+		return nil
+	}
+
+	// because we've checked whether interface exists on all nodes in getCommonInterfaceToNADMapping function.
+	// so we only need to check the first node here.
+	node := nodes[0]
+
+	mappingStr := node.Annotations[utils.KeyInterfaceNADMapping]
+	if mappingStr == "" {
+		return fmt.Errorf("only support dhcp in a symetric network, node %s has no interface-nad-mapping", node.Name)
+	}
+
+	var mapping map[string]string
+	if err := json.Unmarshal([]byte(mappingStr), &mapping); err != nil {
+		return fmt.Errorf("invalid interface-nad-mapping on node %s: %w", node.Name, err)
+	}
+
+	found := false
+	for _, iface := range mapping {
+		if iface == serviceInterface {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("only support dhcp in a symetric network")
+	}
+
+	return nil
+}
+
+// checkIPPoolNetworkMapping validates that a Pool-IPAM service's requested network
+// (cloudprovider.harvesterhci.io/network) is present in the node's interface-nad-mapping
+// annotation, which reflects the cross-VMI intersection of consistently available networks.
+// Mirrors checkDHCPServiceInterface for Pool IPAM mode.
+func (l *LoadBalancerManager) checkIPPoolNetworkMapping(service *v1.Service, nodes []*v1.Node) error {
+	if service.Annotations == nil || lbv1.IPAM(service.Annotations[utils.KeyIPAM]) == lbv1.DHCP {
+		return nil
+	}
+
+	serviceNetwork := service.Annotations[utils.KeyNetwork]
+	if serviceNetwork == "" {
+		return nil
+	}
+
+	// Because we've ensured network consistency across all nodes via cross-VMI
+	// intersection, we only need to check the first node here.
+	node := nodes[0]
+
+	mappingStr := node.Annotations[utils.KeyInterfaceNADMapping]
+	if mappingStr == "" {
+		return fmt.Errorf("only support pool IPAM in a symmetric network, node %s has no interface-nad-mapping", node.Name)
+	}
+
+	var mapping map[string]string
+	if err := json.Unmarshal([]byte(mappingStr), &mapping); err != nil {
+		return fmt.Errorf("invalid interface-nad-mapping on node %s: %w", node.Name, err)
+	}
+
+	if _, ok := mapping[serviceNetwork]; !ok {
+		return fmt.Errorf("only support pool IPAM in a symmetric network: network %s is not consistently available across all nodes", serviceNetwork)
+	}
+	return nil
+}
+
 // EnsureLoadBalancer is to create/update a Harvester load balancer for the service
 func (l *LoadBalancerManager) EnsureLoadBalancer(ctx context.Context, clusterName string, service *v1.Service, nodes []*v1.Node) (*v1.LoadBalancerStatus, error) {
+	if err := l.checkDHCPServiceInterface(service, nodes); err != nil {
+		return nil, err
+	}
+
+	if err := l.checkIPPoolNetworkMapping(service, nodes); err != nil {
+		return nil, err
+	}
+
 	primarySvc, err := l.getPrimaryService(service)
 	if err != nil {
 		return nil, err

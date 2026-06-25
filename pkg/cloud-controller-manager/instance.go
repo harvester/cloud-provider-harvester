@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	ccmutil "github.com/harvester/harvester-cloud-provider/pkg/util"
-	ctllbv1beta1 "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io/v1beta1"
 	ctlkubevirtv1 "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1"
 	wranglecorev1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/core/v1"
 	"github.com/sirupsen/logrus"
@@ -26,10 +25,8 @@ type instanceManager struct {
 	vmClient     ctlkubevirtv1.VirtualMachineClient
 	vmiClient    ctlkubevirtv1.VirtualMachineInstanceClient
 	nodeClient   wranglecorev1.NodeClient
-	ipPoolClient ctllbv1beta1.IPPoolClient
 	nodeToVMName *sync.Map
 	namespace    string
-	clusterName  string
 }
 
 func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bool, error) {
@@ -82,25 +79,30 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 		return nil, err
 	}
 
-	if mapping := i.getCommonInterfaceToNADMapping(); len(mapping) > 0 {
-		if err := i.annotateNodeWithInterfaceMapping(node.Name, mapping); err != nil {
-			logrus.WithField("node", node.Name).Warnf("failed to annotate node with interface-NAD mapping: %v", err)
-		}
-	}
-
-	if i.clusterName != "" {
-		poolNetworks, err := ccmutil.BuildIPPoolNetworkMapping(i.ipPoolClient, i.clusterName)
-		if err != nil {
-			logrus.WithField("node", node.Name).Warnf("failed to list IPPool networks: %v", err)
-		} else if len(poolNetworks) > 0 {
-			filtered := ccmutil.FilterIPPoolMappingByVMINetworks(poolNetworks, vmi)
-			if err := ccmutil.AnnotateNodeWithIPPoolNetworks(i.nodeClient, node.Name, filtered); err != nil {
-				logrus.WithField("node", node.Name).Warnf("failed to annotate node with IPPool networks: %v", err)
-			}
-		}
+	if err := i.annotateNodeWithNADInfo(node); err != nil {
+		return nil, err
 	}
 
 	return meta, nil
+}
+
+func (i *instanceManager) annotateNodeWithNADInfo(node *v1.Node) error {
+	// List VMIs once. GetCommonVMINADs computes the {nad→interface} intersection across
+	// all nodes, from which both the interface annotation and the IPPool annotation are derived.
+	vmiList, err := i.vmiClient.List(i.namespace, metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	commonNADs := ccmutil.GetCommonVMINADs(vmiList.Items) // {nad → interface}
+
+	if len(commonNADs) > 0 {
+		if err := i.annotateNodeWithInterfaceMapping(node.Name, commonNADs); err != nil {
+			return fmt.Errorf("failed to annotate node with interface-NAD mapping: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (i *instanceManager) getVM(node *v1.Node) (*kubevirtv1.VirtualMachine, error) {
@@ -255,65 +257,7 @@ func getAdditionalInternalIPs(node *v1.Node) []string {
 	return ips
 }
 
-// getCommonInterfaceToNADMapping lists all VMIs in the namespace and returns only the
-// interface->NAD entries that are consistent (same interface name maps to the same NAD)
-// across ALL VMIs. This ensures users see only stable, predictable network interface mappings.
-//
-// Example:
-//
-//	vm1: enp1s0->mgmt, enp2s0->net122, enp3s0->net123
-//	vm2: enp1s0->mgmt, enp2s0->net123, enp3s0->net122
-//	result: enp1s0->mgmt  (only the consistent entry)
-//
-//	vm1: enp1s0->mgmt, enp2s0->net122
-//	vm2: enp1s0->mgmt, enp2s0->net122, enp3s0->net123
-//	result: enp1s0->mgmt, enp2s0->net122  (entries consistent in all VMIs)
-func (i *instanceManager) getCommonInterfaceToNADMapping() map[string]string {
-	vmiList, err := i.vmiClient.List(i.namespace, metav1.ListOptions{})
-	if err != nil {
-		logrus.Warnf("failed to list VMIs for interface-NAD mapping: %v", err)
-		return nil
-	}
-	if len(vmiList.Items) == 0 {
-		return nil
-	}
-	result := getInterfaceToNADMapping(&vmiList.Items[0])
-	for idx := range vmiList.Items[1:] {
-		mapping := getInterfaceToNADMapping(&vmiList.Items[idx+1])
-		for iface, nad := range result {
-			if mapping[iface] != nad {
-				delete(result, iface)
-			}
-		}
-	}
-	return result
-}
-
-// getInterfaceToNADMapping builds a map of Linux interface name -> Multus NAD name
-// by joining VMI spec networks with VMI status interfaces (reported by the guest agent).
-// Example result: {"enp1s0": "default/mgmt-vlan1", "enp2s0": "default/net123"}
-// Interfaces without a multus network name (e.g. calico, kube-vip macvlan) are excluded.
-func getInterfaceToNADMapping(vmi *kubevirtv1.VirtualMachineInstance) map[string]string {
-	nameToNAD := make(map[string]string, len(vmi.Spec.Networks))
-	for _, net := range vmi.Spec.Networks {
-		if net.Multus != nil {
-			nameToNAD[net.Name] = net.Multus.NetworkName
-		}
-	}
-
-	result := make(map[string]string)
-	for _, iface := range vmi.Status.Interfaces {
-		if iface.InterfaceName == "" || iface.Name == "" {
-			continue
-		}
-		if nad, ok := nameToNAD[iface.Name]; ok {
-			result[iface.InterfaceName] = nad
-		}
-	}
-	return result
-}
-
-// annotateNodeWithInterfaceMapping stores the interface->NAD mapping as a JSON annotation
+// annotateNodeWithInterfaceMapping stores the NAD->interface mapping as a JSON annotation
 // on the Kubernetes Node so that frontends can query it via the K8s API.
 func (i *instanceManager) annotateNodeWithInterfaceMapping(nodeName string, mapping map[string]string) error {
 	data, err := json.Marshal(mapping)

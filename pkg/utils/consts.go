@@ -24,15 +24,11 @@ const (
 	KeyAdditionalInternalIPs = HarvesterCloudProviderPrefix + "additional-internal-ips"
 
 	// KeyInterfaceNADMapping is stored on Node objects by the cloud provider.
-	// Value is a JSON map of Linux interface name -> Multus NetworkAttachmentDefinition name,
-	// e.g. {"enp1s0":"default/mgmt-vlan1","enp2s0":"default/net123"}.
-	// Frontend can read this annotation to present meaningful interface choices to users.
+	// Value is a JSON map of Multus NetworkAttachmentDefinition name -> Linux interface name,
+	// e.g. {"default/mgmt-vlan1":"enp1s0","default/net123":"enp2s0"}.
+	// Only NADs consistently available across all nodes (cross-VMI intersection) are included.
 	KeyInterfaceNADMapping = HarvesterCloudProviderPrefix + "interface-nad-mapping"
 
-	// KeyIPPoolNetworkMapping is stored on Node objects by the cloud provider.
-	// Value is a JSON map of IPPool name -> network NAD,
-	// e.g. {"pool1":"default/net123"}.
-	KeyIPPoolNetworkMapping = HarvesterCloudProviderPrefix + "ippool-network-mapping"
 
 	// original defined&unexported on pkg/cloud-controller-manager/loadbalancer.go
 	// moved to here with adding LB prefix
