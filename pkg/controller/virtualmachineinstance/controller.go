@@ -2,8 +2,13 @@ package virtualmachineinstance
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"sync"
 
+	cfg "github.com/harvester/harvester-cloud-provider/pkg/config"
+	ccmutil "github.com/harvester/harvester-cloud-provider/pkg/util"
+	utils "github.com/harvester/harvester-cloud-provider/pkg/utils"
 	"github.com/harvester/harvester/pkg/builder"
 	ctlv1 "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1"
 	harvesterutil "github.com/harvester/harvester/pkg/util"
@@ -11,7 +16,10 @@ import (
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	cloudproviderapi "k8s.io/cloud-provider/api"
 	cloudnodeutil "k8s.io/cloud-provider/node/helpers"
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -38,6 +46,7 @@ func Register(
 		vmis:           vmis,
 		vmiCache:       vmis.Cache(),
 		nodeCache:      nodes.Cache(),
+		nodeClient:     nodes,
 		restClient:     restClient,
 		kubevirtClient: kubevirtClient,
 		nodeToVMName:   nodeToVMName,
@@ -54,6 +63,7 @@ type Handler struct {
 	vmis           ctlv1.VirtualMachineInstanceController
 	vmiCache       ctlv1.VirtualMachineInstanceCache
 	nodeCache      ctlcorev1.NodeCache
+	nodeClient     ctlcorev1.NodeClient
 	restClient     kubernetes.Interface
 	kubevirtClient kubecli.KubevirtClient
 
@@ -112,6 +122,10 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 		return vmi, nil
 	}
 
+	if err := h.annotateNodeWithNADInfo(node); err != nil {
+		return vmi, fmt.Errorf("failed to annotate node %s with NAD info: %w", node.Name, err)
+	}
+
 	if !compareTopology(vmi.GetAnnotations(), node.GetLabels()) {
 		if err := h.reSync(vmi); err != nil {
 			return vmi, err
@@ -136,4 +150,57 @@ func compareTopology(a map[string]string, b map[string]string) bool {
 
 func isMigrationCompleted(vmi *kubevirtv1.VirtualMachineInstance) bool {
 	return vmi.Status.MigrationState == nil || vmi.Status.MigrationState.Completed
+}
+
+// annotateNodeWithNADInfo computes the common NAD→interface mapping across all VMIs
+// in this guest cluster and writes it onto the Kubernetes Node annotation.
+func (h *Handler) annotateNodeWithNADInfo(node *corev1.Node) error {
+	sel := labels.Set{utils.LabelKeyGuestClusterNameOnVM: cfg.GetConfig().ClusterName}.AsSelector()
+	vmiPtrs, err := h.vmiCache.List(h.namespace, sel)
+	if err != nil {
+		return err
+	}
+
+	vmis := make([]kubevirtv1.VirtualMachineInstance, 0, len(vmiPtrs))
+	for _, v := range vmiPtrs {
+		if v != nil {
+			vmis = append(vmis, *v)
+		}
+	}
+
+	commonNADs := ccmutil.GetCommonVMINADs(vmis) // {nad → interface}
+	if len(commonNADs) > 0 {
+		if err := h.annotateNodeWithInterfaceMapping(node.Name, commonNADs); err != nil {
+			return fmt.Errorf("failed to annotate node with interface-NAD mapping: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// annotateNodeWithInterfaceMapping stores the NAD->interface mapping as a JSON annotation
+// on the Kubernetes Node so that frontends can query it via the K8s API.
+func (h *Handler) annotateNodeWithInterfaceMapping(nodeName string, mapping map[string]string) error {
+	data, err := json.Marshal(mapping)
+	if err != nil {
+		return fmt.Errorf("marshal interface mapping: %w", err)
+	}
+	value := string(data)
+
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		node, err := h.nodeClient.Get(nodeName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if node.Annotations[utils.KeyInterfaceNADMapping] == value {
+			return nil
+		}
+		nodeCopy := node.DeepCopy()
+		if nodeCopy.Annotations == nil {
+			nodeCopy.Annotations = make(map[string]string)
+		}
+		nodeCopy.Annotations[utils.KeyInterfaceNADMapping] = value
+		_, err = h.nodeClient.Update(nodeCopy)
+		return err
+	})
 }

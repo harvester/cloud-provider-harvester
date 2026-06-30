@@ -94,6 +94,10 @@ const (
 	// Value is the guest cluster name
 	LabelKeyGuestClusterNameOnVM = "guestcluster.harvesterhci.io/name"
 
+	// KubevipAutoInterface is the kube-vip serviceInterface value that instructs kube-vip
+	// to find the correct interface automatically by subnet match.
+	KubevipAutoInterface = "auto"
+
 	// node-ip related
 
 	// Note:

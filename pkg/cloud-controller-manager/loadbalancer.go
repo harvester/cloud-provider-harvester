@@ -117,85 +117,82 @@ func (l *LoadBalancerManager) getPrimaryService(service *v1.Service) (*v1.Servic
 	return primarySvc, nil
 }
 
-func (l *LoadBalancerManager) checkDHCPServiceInterface(service *v1.Service, nodes []*v1.Node) error {
-	if service.Annotations == nil || lbv1.IPAM(service.Annotations[utils.KeyIPAM]) != lbv1.DHCP {
+// checkDHCPServiceInterface verifies that the requested kube-vip.io/serviceInterface
+// exists as a Linux interface name (value) in the node's interface-nad-mapping.
+// No-ops if the service is not in DHCP mode or has no interface annotation.
+func checkDHCPServiceInterface(service *v1.Service, nodeName string, mapping map[string]string) error {
+	if lbv1.IPAM(service.Annotations[utils.KeyIPAM]) != lbv1.DHCP {
 		return nil
 	}
-
 	serviceInterface := service.Annotations[utils.KeyKubevipServiceInterface]
 	if serviceInterface == "" {
 		return nil
 	}
 
-	// because we've checked whether interface exists on all nodes in getCommonInterfaceToNADMapping function.
-	// so we only need to check the first node here.
-	node := nodes[0]
-
-	mappingStr := node.Annotations[utils.KeyInterfaceNADMapping]
-	if mappingStr == "" {
-		return fmt.Errorf("only support dhcp in a symetric network, node %s has no interface-nad-mapping", node.Name)
-	}
-
-	var mapping map[string]string
-	if err := json.Unmarshal([]byte(mappingStr), &mapping); err != nil {
-		return fmt.Errorf("invalid interface-nad-mapping on node %s: %w", node.Name, err)
-	}
-
-	found := false
 	for _, iface := range mapping {
 		if iface == serviceInterface {
-			found = true
-			break
+			return nil
 		}
 	}
-	if !found {
-		return fmt.Errorf("only support dhcp in a symetric network")
-	}
-
-	return nil
+	return fmt.Errorf("only support dhcp in a symmetric network")
 }
 
-// checkIPPoolNetworkMapping validates that a Pool-IPAM service's requested network
-// (cloudprovider.harvesterhci.io/network) is present in the node's interface-nad-mapping
-// annotation, which reflects the cross-VMI intersection of consistently available networks.
-// Mirrors checkDHCPServiceInterface for Pool IPAM mode.
-func (l *LoadBalancerManager) checkIPPoolNetworkMapping(service *v1.Service, nodes []*v1.Node) error {
-	if service.Annotations == nil || lbv1.IPAM(service.Annotations[utils.KeyIPAM]) == lbv1.DHCP {
+// checkIPPoolNetworkMapping verifies that the requested cloudprovider.harvesterhci.io/network
+// NAD name is present as a key in the node's interface-nad-mapping.
+// No-ops if the service is in DHCP mode or has no network annotation.
+func checkIPPoolNetworkMapping(service *v1.Service, nodeName string, mapping map[string]string) error {
+	if lbv1.IPAM(service.Annotations[utils.KeyIPAM]) == lbv1.DHCP {
 		return nil
 	}
-
 	serviceNetwork := service.Annotations[utils.KeyNetwork]
 	if serviceNetwork == "" {
 		return nil
 	}
 
-	// Because we've ensured network consistency across all nodes via cross-VMI
-	// intersection, we only need to check the first node here.
+	if _, ok := mapping[serviceNetwork]; !ok {
+		return fmt.Errorf("only support pool IPAM in a symmetric network: network %s is not consistently available across all nodes", serviceNetwork)
+	}
+
+	return nil
+}
+
+// checkNetworkBinding validates that the service's network configuration is consistent
+// with the interfaces available across all nodes. It retrieves the shared node mapping
+// once and delegates to the IPAM-specific check functions.
+//
+// We only check the first node because the cross-VMI intersection in
+// getCommonInterfaceToNADMapping already guarantees consistency across all nodes.
+func (l *LoadBalancerManager) checkNetworkBinding(service *v1.Service, nodes []*v1.Node) error {
+	if service.Annotations == nil {
+		return nil
+	}
+
+	// currently we only support symmetric network, so we only check the first node
 	node := nodes[0]
 
 	mappingStr := node.Annotations[utils.KeyInterfaceNADMapping]
 	if mappingStr == "" {
-		return fmt.Errorf("only support pool IPAM in a symmetric network, node %s has no interface-nad-mapping", node.Name)
+		return fmt.Errorf("only support in a symmetric network, node %s has no interface-nad-mapping", node.Name)
 	}
-
 	var mapping map[string]string
 	if err := json.Unmarshal([]byte(mappingStr), &mapping); err != nil {
 		return fmt.Errorf("invalid interface-nad-mapping on node %s: %w", node.Name, err)
 	}
 
-	if _, ok := mapping[serviceNetwork]; !ok {
-		return fmt.Errorf("only support pool IPAM in a symmetric network: network %s is not consistently available across all nodes", serviceNetwork)
+	if mapping == nil {
+		return fmt.Errorf("only support in a symmetric network, node %s has no interface-nad-mapping", node.Name)
 	}
-	return nil
+
+	if err := checkDHCPServiceInterface(service, node.Name, mapping); err != nil {
+		return err
+	}
+
+	return checkIPPoolNetworkMapping(service, node.Name, mapping)
 }
 
 // EnsureLoadBalancer is to create/update a Harvester load balancer for the service
 func (l *LoadBalancerManager) EnsureLoadBalancer(ctx context.Context, clusterName string, service *v1.Service, nodes []*v1.Node) (*v1.LoadBalancerStatus, error) {
-	if err := l.checkDHCPServiceInterface(service, nodes); err != nil {
-		return nil, err
-	}
-
-	if err := l.checkIPPoolNetworkMapping(service, nodes); err != nil {
+	if err := l.checkNetworkBinding(service, nodes); err != nil {
 		return nil, err
 	}
 
@@ -418,14 +415,25 @@ func (l *LoadBalancerManager) retryUpdateService(service *v1.Service, serviceTyp
 }
 
 // expectedServiceInterface returns the value that should be set for kube-vip.io/serviceInterface.
-// For pool IPAM mode it returns "auto" so kube-vip finds the interface by subnet match.
-// For DHCP mode it preserves whatever the user already set on the service (e.g. "enp2s0"),
-// so the cloud provider never overwrites the user's explicit interface choice.
+// Priority:
+//  1. If the user has explicitly set kube-vip.io/serviceInterface, that value is always respected.
+//  2. If IPAM is Pool and no explicit interface is set, returns KubevipAutoInterface ("auto") so
+//     kube-vip finds the correct interface by subnet match.
+//  3. Otherwise (e.g. DHCP with no explicit interface), returns "" so the annotation is removed.
 func expectedServiceInterface(service *v1.Service) string {
-	if service.Annotations != nil && lbv1.IPAM(service.Annotations[utils.KeyIPAM]) == lbv1.DHCP {
-		return service.Annotations[utils.KeyKubevipServiceInterface]
+	if service.Annotations == nil {
+		return ""
 	}
-	return "auto"
+
+	if v, ok := service.Annotations[utils.KeyKubevipServiceInterface]; ok {
+		return v
+	}
+
+	if lbv1.IPAM(service.Annotations[utils.KeyIPAM]) == lbv1.Pool {
+		return utils.KubevipAutoInterface
+	}
+
+	return ""
 }
 
 func isPrimaryServiceUpdatedWithIP(service *v1.Service, lbAddress, ip string) bool {
@@ -482,7 +490,7 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 func isSecondaryServiceUpdatedWithPrimary(secondary *v1.Service, ip, labelValue string) bool {
 	return secondary.Annotations != nil &&
 		secondary.Annotations[utils.KeyKubevipLoadBalancerIP] == ip &&
-		secondary.Annotations[utils.KeyKubevipServiceInterface] == "auto" &&
+		secondary.Annotations[utils.KeyKubevipServiceInterface] == utils.KubevipAutoInterface &&
 		secondary.Annotations[utils.KeyIPAM] == "" &&
 		secondary.Labels != nil &&
 		secondary.Labels[utils.KeyPrimaryService] == labelValue
@@ -505,7 +513,7 @@ func (l *LoadBalancerManager) updateSecondaryServiceLoadBalancerIP(ip string, pr
 		secondaryCopy.Labels[utils.KeyPrimaryService] = primaryLabel
 		// update the annotations and kube-vip will update the service status load balancer
 		secondaryCopy.Annotations[utils.KeyKubevipLoadBalancerIP] = ip
-		secondaryCopy.Annotations[utils.KeyKubevipServiceInterface] = "auto"
+		secondaryCopy.Annotations[utils.KeyKubevipServiceInterface] = utils.KubevipAutoInterface
 		delete(secondaryCopy.Annotations, utils.KeyIPAM)
 	}
 

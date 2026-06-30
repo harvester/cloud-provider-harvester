@@ -122,7 +122,7 @@ func Test_isPrimaryServiceUpdatedWithIP(t *testing.T) {
 			name: "fully_updated",
 			annotations: map[string]string{
 				utils.KeyKubevipLoadBalancerIP:   ip,
-				utils.KeyKubevipServiceInterface: "auto",
+				utils.KeyKubevipServiceInterface: utils.KubevipAutoInterface,
 			},
 			labels:    map[string]string{utils.KeyPrimaryService: ""},
 			lbAddress: ip,
@@ -130,9 +130,10 @@ func Test_isPrimaryServiceUpdatedWithIP(t *testing.T) {
 			want:      true,
 		},
 		{
-			name: "missing_service_interface_annotation",
+			name: "missing_service_interface_annotation_with_pool_ipam",
 			annotations: map[string]string{
 				utils.KeyKubevipLoadBalancerIP: ip,
+				utils.KeyIPAM:                  string(lbv1.Pool),
 			},
 			labels:    map[string]string{utils.KeyPrimaryService: ""},
 			lbAddress: ip,
@@ -140,7 +141,7 @@ func Test_isPrimaryServiceUpdatedWithIP(t *testing.T) {
 			want:      false,
 		},
 		{
-			name: "wrong_service_interface_value",
+			name: "explicit_interface_always_accepted",
 			annotations: map[string]string{
 				utils.KeyKubevipLoadBalancerIP:   ip,
 				utils.KeyKubevipServiceInterface: "eth0",
@@ -148,13 +149,13 @@ func Test_isPrimaryServiceUpdatedWithIP(t *testing.T) {
 			labels:    map[string]string{utils.KeyPrimaryService: ""},
 			lbAddress: ip,
 			ip:        ip,
-			want:      false,
+			want:      true,
 		},
 		{
 			name: "ip_mismatch",
 			annotations: map[string]string{
 				utils.KeyKubevipLoadBalancerIP:   "192.168.101.1",
-				utils.KeyKubevipServiceInterface: "auto",
+				utils.KeyKubevipServiceInterface: utils.KubevipAutoInterface,
 			},
 			labels:    map[string]string{utils.KeyPrimaryService: ""},
 			lbAddress: ip,
@@ -291,7 +292,7 @@ func Test_isSecondaryServiceUpdatedWithPrimary(t *testing.T) {
 			name: "fully_updated",
 			annotations: map[string]string{
 				utils.KeyKubevipLoadBalancerIP:   ip,
-				utils.KeyKubevipServiceInterface: "auto",
+				utils.KeyKubevipServiceInterface: utils.KubevipAutoInterface,
 				utils.KeyIPAM:                    "",
 			},
 			labels: map[string]string{utils.KeyPrimaryService: labelValue},
@@ -320,7 +321,7 @@ func Test_isSecondaryServiceUpdatedWithPrimary(t *testing.T) {
 			name: "ip_mismatch",
 			annotations: map[string]string{
 				utils.KeyKubevipLoadBalancerIP:   "192.168.101.1",
-				utils.KeyKubevipServiceInterface: "auto",
+				utils.KeyKubevipServiceInterface: utils.KubevipAutoInterface,
 				utils.KeyIPAM:                    "",
 			},
 			labels: map[string]string{utils.KeyPrimaryService: labelValue},

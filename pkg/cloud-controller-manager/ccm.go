@@ -45,13 +45,7 @@ type CloudProvider struct {
 
 	Context context.Context
 
-	namespace   string
-	clusterName string
-}
-
-// SetClusterName is called after initialization to propagate the --cluster-name flag.
-func (c *CloudProvider) SetClusterName(name string) {
-	c.clusterName = name
+	namespace string
 }
 
 func init() {
@@ -122,10 +116,8 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 	cp.instances = &instanceManager{
 		vmClient:     cp.kubevirtFactory.Kubevirt().V1().VirtualMachine(),
 		vmiClient:    cp.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
-		nodeClient:   cp.localCoreFactory.Core().V1().Node(),
 		nodeToVMName: nodeToVMName,
 		namespace:    namespace,
-		clusterName:  cfg.GetConfig().ClusterName,
 	}
 
 	logrus.Infof("New CloudProvider Harvester on namespace %s", namespace)

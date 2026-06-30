@@ -6,14 +6,11 @@ import (
 	"fmt"
 	"sync"
 
-	ccmutil "github.com/harvester/harvester-cloud-provider/pkg/util"
 	ctlkubevirtv1 "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1"
-	wranglecorev1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/core/v1"
 	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/util/retry"
 	cloudprovider "k8s.io/cloud-provider"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 
@@ -24,10 +21,8 @@ import (
 type instanceManager struct {
 	vmClient     ctlkubevirtv1.VirtualMachineClient
 	vmiClient    ctlkubevirtv1.VirtualMachineInstanceClient
-	nodeClient   wranglecorev1.NodeClient
 	nodeToVMName *sync.Map
 	namespace    string
-	clusterName  string
 }
 
 func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bool, error) {
@@ -80,35 +75,7 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 		return nil, err
 	}
 
-	if err := i.annotateNodeWithNADInfo(node); err != nil {
-		return nil, err
-	}
-
 	return meta, nil
-}
-
-func (i *instanceManager) annotateNodeWithNADInfo(node *v1.Node) error {
-	// List VMIs once. GetCommonVMINADs computes the {nad→interface} intersection across
-	// all nodes, from which both the interface annotation and the IPPool annotation are derived.
-	// Filter by the guest cluster label so we only see VMIs belonging to this cluster.
-	listOpts := metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("%s=%s", utils.LabelKeyGuestClusterNameOnVM, i.clusterName),
-	}
-
-	vmiList, err := i.vmiClient.List(i.namespace, listOpts)
-	if err != nil {
-		return err
-	}
-
-	commonNADs := ccmutil.GetCommonVMINADs(vmiList.Items) // {nad → interface}
-
-	if len(commonNADs) > 0 {
-		if err := i.annotateNodeWithInterfaceMapping(node.Name, commonNADs); err != nil {
-			return fmt.Errorf("failed to annotate node with interface-NAD mapping: %w", err)
-		}
-	}
-
-	return nil
 }
 
 func (i *instanceManager) getVM(node *v1.Node) (*kubevirtv1.VirtualMachine, error) {
@@ -261,31 +228,4 @@ func getAdditionalInternalIPs(node *v1.Node) []string {
 	}
 
 	return ips
-}
-
-// annotateNodeWithInterfaceMapping stores the NAD->interface mapping as a JSON annotation
-// on the Kubernetes Node so that frontends can query it via the K8s API.
-func (i *instanceManager) annotateNodeWithInterfaceMapping(nodeName string, mapping map[string]string) error {
-	data, err := json.Marshal(mapping)
-	if err != nil {
-		return fmt.Errorf("marshal interface mapping: %w", err)
-	}
-	value := string(data)
-
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		node, err := i.nodeClient.Get(nodeName, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		if node.Annotations[utils.KeyInterfaceNADMapping] == value {
-			return nil
-		}
-		nodeCopy := node.DeepCopy()
-		if nodeCopy.Annotations == nil {
-			nodeCopy.Annotations = make(map[string]string)
-		}
-		nodeCopy.Annotations[utils.KeyInterfaceNADMapping] = value
-		_, err = i.nodeClient.Update(nodeCopy)
-		return err
-	})
 }
