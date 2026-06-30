@@ -27,6 +27,7 @@ type instanceManager struct {
 	nodeClient   wranglecorev1.NodeClient
 	nodeToVMName *sync.Map
 	namespace    string
+	clusterName  string
 }
 
 func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bool, error) {
@@ -89,7 +90,12 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 func (i *instanceManager) annotateNodeWithNADInfo(node *v1.Node) error {
 	// List VMIs once. GetCommonVMINADs computes the {nad→interface} intersection across
 	// all nodes, from which both the interface annotation and the IPPool annotation are derived.
-	vmiList, err := i.vmiClient.List(i.namespace, metav1.ListOptions{})
+	// Filter by the guest cluster label so we only see VMIs belonging to this cluster.
+	listOpts := metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("%s=%s", utils.LabelKeyGuestClusterNameOnVM, i.clusterName),
+	}
+
+	vmiList, err := i.vmiClient.List(i.namespace, listOpts)
 	if err != nil {
 		return err
 	}

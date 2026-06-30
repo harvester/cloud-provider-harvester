@@ -29,7 +29,6 @@ const (
 	// Only NADs consistently available across all nodes (cross-VMI intersection) are included.
 	KeyInterfaceNADMapping = HarvesterCloudProviderPrefix + "interface-nad-mapping"
 
-
 	// original defined&unexported on pkg/cloud-controller-manager/loadbalancer.go
 	// moved to here with adding LB prefix
 
@@ -90,6 +89,10 @@ const (
 	FlagNodeIPCIDR = "node-ip-cidr"
 
 	FlagNodeExcludeIPRanges = "node-exclude-ip-ranges"
+
+	// LabelKeyGuestClusterNameOnVM is the label applied to VMs that belong to a guest cluster.
+	// Value is the guest cluster name
+	LabelKeyGuestClusterNameOnVM = "guestcluster.harvesterhci.io/name"
 
 	// node-ip related
 

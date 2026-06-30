@@ -125,6 +125,7 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 		nodeClient:   cp.localCoreFactory.Core().V1().Node(),
 		nodeToVMName: nodeToVMName,
 		namespace:    namespace,
+		clusterName:  cfg.GetConfig().ClusterName,
 	}
 
 	logrus.Infof("New CloudProvider Harvester on namespace %s", namespace)
