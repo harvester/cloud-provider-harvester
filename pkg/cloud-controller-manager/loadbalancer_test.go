@@ -1,6 +1,7 @@
 package ccm
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 
 	cfg "github.com/harvester/harvester-cloud-provider/pkg/config"
 	utils "github.com/harvester/harvester-cloud-provider/pkg/utils"
+	"github.com/harvester/harvester-cloud-provider/pkg/utils/fakeclients"
 )
 
 const defaultUID = "d4b50d98-39ec-4d88-8098-36579de5db4a"
@@ -335,6 +337,100 @@ func Test_isSecondaryServiceUpdatedWithPrimary(t *testing.T) {
 			got := isSecondaryServiceUpdatedWithPrimary(svc, ip, labelValue)
 			if got != tt.want {
 				t.Errorf("isSecondaryServiceUpdatedWithPrimary() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+func newNADMappingConfigMap(mapping map[string]string) *v1.ConfigMap {
+	data, _ := json.Marshal(mapping)
+	return &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      utils.ConfigMapNADMapping,
+			Namespace: metav1.NamespaceSystem,
+		},
+		Data: map[string]string{
+			utils.ConfigMapKeyNADMapping: string(data),
+		},
+	}
+}
+
+func Test_checkNetworkBinding(t *testing.T) {
+	const svcNS, svcName = "default", "my-svc"
+
+	validMapping := map[string]string{
+		"default/net123": "enp2s0",
+		"default/mgmt":   "enp1s0",
+	}
+
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		cache       *fakeclients.ConfigMapCache
+		wantErr     bool
+	}{
+		{
+			name:        "no relevant annotations: always pass",
+			annotations: map[string]string{},
+			cache:       fakeclients.NewConfigMapCache(nil, nil),
+			wantErr:     false,
+		},
+		{
+			name: "ConfigMap not found: pass through",
+			annotations: map[string]string{
+				utils.KeyKubevipServiceInterface: "enp2s0",
+				utils.KeyIPAM:                    string(lbv1.DHCP),
+			},
+			cache:   fakeclients.NewConfigMapCache(nil, nil),
+			wantErr: false,
+		},
+		{
+			name: "DHCP: interface present in mapping",
+			annotations: map[string]string{
+				utils.KeyKubevipServiceInterface: "enp2s0",
+				utils.KeyIPAM:                    string(lbv1.DHCP),
+			},
+			cache:   fakeclients.NewConfigMapCache(newNADMappingConfigMap(validMapping), nil),
+			wantErr: false,
+		},
+		{
+			name: "DHCP: interface not in mapping",
+			annotations: map[string]string{
+				utils.KeyKubevipServiceInterface: "eth99",
+				utils.KeyIPAM:                    string(lbv1.DHCP),
+			},
+			cache:   fakeclients.NewConfigMapCache(newNADMappingConfigMap(validMapping), nil),
+			wantErr: true,
+		},
+		{
+			name: "Pool: network NAD present in mapping",
+			annotations: map[string]string{
+				utils.KeyNetwork: "default/net123",
+				utils.KeyIPAM:    string(lbv1.Pool),
+			},
+			cache:   fakeclients.NewConfigMapCache(newNADMappingConfigMap(validMapping), nil),
+			wantErr: false,
+		},
+		{
+			name: "Pool: network NAD not in mapping",
+			annotations: map[string]string{
+				utils.KeyNetwork: "default/unknown-net",
+				utils.KeyIPAM:    string(lbv1.Pool),
+			},
+			cache:   fakeclients.NewConfigMapCache(newNADMappingConfigMap(validMapping), nil),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newServiceWithAnnotations(tt.annotations, nil)
+			svc.Namespace = svcNS
+			svc.Name = svcName
+
+			lbm := &LoadBalancerManager{configMapCache: tt.cache}
+			err := lbm.checkNetworkBinding(svc, nil)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("checkNetworkBinding() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

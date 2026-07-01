@@ -37,10 +37,11 @@ const (
 // Secondary service is the load balancer service which will share the load balancer created by the primary service. It has the annotation "cloudprovider.harvesterhci.io/primary-service" to specify the primary service.
 
 type LoadBalancerManager struct {
-	lbClient       ctllbv1.LoadBalancerClient
-	localSvcClient wranglecorev1.ServiceClient
-	localSvcCache  wranglecorev1.ServiceCache
-	namespace      string
+	lbClient        ctllbv1.LoadBalancerClient
+	localSvcClient  wranglecorev1.ServiceClient
+	localSvcCache   wranglecorev1.ServiceCache
+	configMapCache  wranglecorev1.ConfigMapCache
+	namespace       string
 }
 
 func (l *LoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName string, service *v1.Service) (status *v1.LoadBalancerStatus, exists bool, err error) {
@@ -118,9 +119,9 @@ func (l *LoadBalancerManager) getPrimaryService(service *v1.Service) (*v1.Servic
 }
 
 // checkDHCPServiceInterface verifies that the requested kube-vip.io/serviceInterface
-// exists as a Linux interface name (value) in the node's interface-nad-mapping.
+// exists as a Linux interface name (value) in the NAD mapping.
 // No-ops if the service is not in DHCP mode or has no interface annotation.
-func checkDHCPServiceInterface(service *v1.Service, nodeName string, mapping map[string]string) error {
+func checkDHCPServiceInterface(service *v1.Service, mapping map[string]string) error {
 	if lbv1.IPAM(service.Annotations[utils.KeyIPAM]) != lbv1.DHCP {
 		return nil
 	}
@@ -140,9 +141,9 @@ func checkDHCPServiceInterface(service *v1.Service, nodeName string, mapping map
 }
 
 // checkIPPoolNetworkMapping verifies that the requested cloudprovider.harvesterhci.io/network
-// NAD name is present as a key in the node's interface-nad-mapping.
+// NAD name is present as a key in the NAD mapping.
 // No-ops if the service is in DHCP mode or has no network annotation.
-func checkIPPoolNetworkMapping(service *v1.Service, nodeName string, mapping map[string]string) error {
+func checkIPPoolNetworkMapping(service *v1.Service, mapping map[string]string) error {
 	if lbv1.IPAM(service.Annotations[utils.KeyIPAM]) == lbv1.DHCP {
 		return nil
 	}
@@ -159,11 +160,8 @@ func checkIPPoolNetworkMapping(service *v1.Service, nodeName string, mapping map
 }
 
 // checkNetworkBinding validates that the service's network configuration is consistent
-// with the interfaces available across all nodes. It retrieves the shared node mapping
-// once and delegates to the IPAM-specific check functions.
-//
-// We only check the first node because the cross-VMI intersection in
-// getCommonInterfaceToNADMapping already guarantees consistency across all nodes.
+// with the NAD->interface mapping stored in the ConfigMap. It delegates to the
+// IPAM-specific check functions.
 func (l *LoadBalancerManager) checkNetworkBinding(service *v1.Service, nodes []*v1.Node) error {
 	if service.Annotations == nil {
 		return nil
@@ -177,30 +175,30 @@ func (l *LoadBalancerManager) checkNetworkBinding(service *v1.Service, nodes []*
 		return nil
 	}
 
-	if len(nodes) == 0 {
-		return fmt.Errorf("no nodes available to validate network binding for service %s/%s", service.Namespace, service.Name)
+	cm, err := l.configMapCache.Get(metav1.NamespaceSystem, utils.ConfigMapNADMapping)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// ConfigMap not present yet; no mapping stored, pass through.
+			return nil
+		}
+		return fmt.Errorf("get NAD mapping ConfigMap: %w", err)
 	}
 
-	// currently we only support symmetric network, so we only check the first node
-	node := nodes[0]
-
-	mappingStr := node.Annotations[utils.KeyInterfaceNADMapping]
+	mappingStr := cm.Data[utils.ConfigMapKeyNADMapping]
 	if mappingStr == "" {
-		// If the node doesn't have the annotation, just let it pass.
-		// Like we don't have the annotation before and follow the old behavior.
 		return nil
 	}
 
 	var mapping map[string]string
 	if err := json.Unmarshal([]byte(mappingStr), &mapping); err != nil || len(mapping) == 0 {
-		return fmt.Errorf("invalid %s on node %s: %w", utils.KeyInterfaceNADMapping, node.Name, err)
+		return fmt.Errorf("invalid %s in ConfigMap %s: %w", utils.ConfigMapKeyNADMapping, utils.ConfigMapNADMapping, err)
 	}
 
-	if err := checkDHCPServiceInterface(service, node.Name, mapping); err != nil {
+	if err := checkDHCPServiceInterface(service, mapping); err != nil {
 		return err
 	}
 
-	return checkIPPoolNetworkMapping(service, node.Name, mapping)
+	return checkIPPoolNetworkMapping(service, mapping)
 }
 
 // EnsureLoadBalancer is to create/update a Harvester load balancer for the service

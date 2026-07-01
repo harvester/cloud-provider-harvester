@@ -37,20 +37,21 @@ func Register(
 	ctx context.Context,
 	restClient kubernetes.Interface,
 	nodes ctlcorev1.NodeController,
+	configMaps ctlcorev1.ConfigMapController,
 	vmis ctlv1.VirtualMachineInstanceController,
 	kubevirtClient kubecli.KubevirtClient,
 	nodeToVMName *sync.Map,
 	namespace string,
 ) {
 	handler := &Handler{
-		vmis:           vmis,
-		vmiCache:       vmis.Cache(),
-		nodeCache:      nodes.Cache(),
-		nodeClient:     nodes,
-		restClient:     restClient,
-		kubevirtClient: kubevirtClient,
-		nodeToVMName:   nodeToVMName,
-		namespace:      namespace,
+		vmis:            vmis,
+		vmiCache:        vmis.Cache(),
+		nodeCache:       nodes.Cache(),
+		configMapClient: configMaps,
+		restClient:      restClient,
+		kubevirtClient:  kubevirtClient,
+		nodeToVMName:    nodeToVMName,
+		namespace:       namespace,
 	}
 	logrus.WithFields(logrus.Fields{
 		"controller": vmiControllerName,
@@ -60,12 +61,12 @@ func Register(
 }
 
 type Handler struct {
-	vmis           ctlv1.VirtualMachineInstanceController
-	vmiCache       ctlv1.VirtualMachineInstanceCache
-	nodeCache      ctlcorev1.NodeCache
-	nodeClient     ctlcorev1.NodeClient
-	restClient     kubernetes.Interface
-	kubevirtClient kubecli.KubevirtClient
+	vmis            ctlv1.VirtualMachineInstanceController
+	vmiCache        ctlv1.VirtualMachineInstanceCache
+	nodeCache       ctlcorev1.NodeCache
+	configMapClient ctlcorev1.ConfigMapClient
+	restClient      kubernetes.Interface
+	kubevirtClient  kubecli.KubevirtClient
 
 	nodeToVMName *sync.Map
 
@@ -128,8 +129,8 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 		}
 	}
 
-	if err := h.annotateNodeWithNADInfo(); err != nil {
-		return vmi, fmt.Errorf("failed to annotate node %s with NAD info: %w", node.Name, err)
+	if err := h.syncNADMappingConfigMap(); err != nil {
+		return vmi, fmt.Errorf("failed to sync NAD mapping ConfigMap: %w", err)
 	}
 
 	return vmi, nil
@@ -152,73 +153,58 @@ func isMigrationCompleted(vmi *kubevirtv1.VirtualMachineInstance) bool {
 	return vmi.Status.MigrationState == nil || vmi.Status.MigrationState.Completed
 }
 
-// annotateNodeWithNADInfo computes the common NAD→interface mapping across all VMIs
-// in this guest cluster and writes it onto ALL Kubernetes Node annotations.
-func (h *Handler) annotateNodeWithNADInfo() error {
+// syncNADMappingConfigMap computes the common NAD→interface mapping across all VMIs
+// in this guest cluster and stores it in a ConfigMap in kube-system.
+// If the mapping is empty, the value is cleared (set to "").
+func (h *Handler) syncNADMappingConfigMap() error {
 	clusterName := cfg.GetConfig().ClusterName
 
 	if clusterName == "" || clusterName == utils.DefaultGuestClusterName {
 		// Return an error and exit early to prevent cross-cluster pollution
-		return fmt.Errorf("failed to annotate node: guest cluster name configuration is empty/default, we cannot identify the cluster")
+		return fmt.Errorf("failed to sync NAD mapping ConfigMap: guest cluster name configuration is empty/default, we cannot identify the cluster")
 	}
 
 	sel := labels.Set{utils.LabelKeyGuestClusterNameOnVM: clusterName}.AsSelector()
-	vmiPtrs, err := h.vmiCache.List(h.namespace, sel)
+	vmis, err := h.vmiCache.List(h.namespace, sel)
 	if err != nil {
 		return err
 	}
 
-	vmis := make([]kubevirtv1.VirtualMachineInstance, 0, len(vmiPtrs))
-	for _, v := range vmiPtrs {
-		if v != nil {
-			vmis = append(vmis, *v)
-		}
-	}
-
-	mapping := ccmutil.GetCommonVMINADs(vmis)
-
-	nodes, err := h.nodeCache.List(labels.Everything())
-	if err != nil {
-		return fmt.Errorf("failed to list nodes: %w", err)
-	}
-
-	for _, n := range nodes {
-		if err := h.annotateNodeWithInterfaceMapping(n.Name, mapping); err != nil {
-			return fmt.Errorf("failed to annotate node %s with interface-NAD mapping: %w", n.Name, err)
-		}
-	}
-
-	return nil
-}
-
-// annotateNodeWithInterfaceMapping stores the NAD->interface mapping as a JSON annotation
-// on the Kubernetes Node so that frontends can query it via the K8s API.
-func (h *Handler) annotateNodeWithInterfaceMapping(nodeName string, mapping map[string]string) error {
 	var value string
-
-	if len(mapping) != 0 {
+	if mapping := ccmutil.GetCommonVMINADs(vmis); len(mapping) > 0 {
 		data, err := json.Marshal(mapping)
 		if err != nil {
-			return fmt.Errorf("marshal interface mapping: %w", err)
+			return fmt.Errorf("marshal NAD mapping: %w", err)
 		}
 		value = string(data)
 	}
 
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		node, err := h.nodeClient.Get(nodeName, metav1.GetOptions{})
+		existing, err := h.configMapClient.Get(metav1.NamespaceSystem, utils.ConfigMapNADMapping, metav1.GetOptions{})
 		if err != nil {
+			if !errors.IsNotFound(err) {
+				return err
+			}
+			_, err = h.configMapClient.Create(&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      utils.ConfigMapNADMapping,
+					Namespace: metav1.NamespaceSystem,
+				},
+				Data: map[string]string{
+					utils.ConfigMapKeyNADMapping: value,
+				},
+			})
 			return err
 		}
-		existing, keyExists := node.Annotations[utils.KeyInterfaceNADMapping]
-		if keyExists && existing == value {
+		if existing.Data[utils.ConfigMapKeyNADMapping] == value {
 			return nil
 		}
-		nodeCopy := node.DeepCopy()
-		if nodeCopy.Annotations == nil {
-			nodeCopy.Annotations = make(map[string]string)
+		cmCopy := existing.DeepCopy()
+		if cmCopy.Data == nil {
+			cmCopy.Data = make(map[string]string)
 		}
-		nodeCopy.Annotations[utils.KeyInterfaceNADMapping] = value
-		_, err = h.nodeClient.Update(nodeCopy)
+		cmCopy.Data[utils.ConfigMapKeyNADMapping] = value
+		_, err = h.configMapClient.Update(cmCopy)
 		return err
 	})
 }

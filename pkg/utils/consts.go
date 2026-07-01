@@ -23,11 +23,18 @@ const (
 	// internal addresses in the Kubernetes API.
 	KeyAdditionalInternalIPs = HarvesterCloudProviderPrefix + "additional-internal-ips"
 
-	// KeyInterfaceNADMapping is stored on Node objects by the cloud provider.
+	// KeyInterfaceNADMapping is the annotation key used on Node objects (kept for reference).
+	KeyInterfaceNADMapping = HarvesterCloudProviderPrefix + "interface-nad-mapping"
+
+	// ConfigMapNADMapping is the name of the ConfigMap (in kube-system) that stores the
+	// common NAD->interface mapping for the guest cluster.
+	ConfigMapNADMapping = "harvester-nad-mapping"
+
+	// ConfigMapKeyNADMapping is the data key inside the NAD mapping ConfigMap.
+	// ConfigMap data keys must match '[-._a-zA-Z0-9]+', so we cannot use the full annotation key.
 	// Value is a JSON map of Multus NetworkAttachmentDefinition name -> Linux interface name,
 	// e.g. {"default/mgmt-vlan1":"enp1s0","default/net123":"enp2s0"}.
-	// Only NADs consistently available across all nodes (cross-VMI intersection) are included.
-	KeyInterfaceNADMapping = HarvesterCloudProviderPrefix + "interface-nad-mapping"
+	ConfigMapKeyNADMapping = "interface-nad-mapping"
 
 	// original defined&unexported on pkg/cloud-controller-manager/loadbalancer.go
 	// moved to here with adding LB prefix
