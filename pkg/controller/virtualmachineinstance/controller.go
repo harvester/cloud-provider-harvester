@@ -122,14 +122,14 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 		return vmi, nil
 	}
 
-	if err := h.annotateNodeWithNADInfo(node); err != nil {
-		return vmi, fmt.Errorf("failed to annotate node %s with NAD info: %w", node.Name, err)
-	}
-
 	if !compareTopology(vmi.GetAnnotations(), node.GetLabels()) {
 		if err := h.reSync(vmi); err != nil {
 			return vmi, err
 		}
+	}
+
+	if err := h.annotateNodeWithNADInfo(); err != nil {
+		return vmi, fmt.Errorf("failed to annotate node %s with NAD info: %w", node.Name, err)
 	}
 
 	return vmi, nil
@@ -153,8 +153,8 @@ func isMigrationCompleted(vmi *kubevirtv1.VirtualMachineInstance) bool {
 }
 
 // annotateNodeWithNADInfo computes the common NAD→interface mapping across all VMIs
-// in this guest cluster and writes it onto the Kubernetes Node annotation.
-func (h *Handler) annotateNodeWithNADInfo(node *corev1.Node) error {
+// in this guest cluster and writes it onto ALL Kubernetes Node annotations.
+func (h *Handler) annotateNodeWithNADInfo() error {
 	clusterName := cfg.GetConfig().ClusterName
 
 	if clusterName == "" || clusterName == utils.DefaultGuestClusterName {
@@ -175,10 +175,16 @@ func (h *Handler) annotateNodeWithNADInfo(node *corev1.Node) error {
 		}
 	}
 
-	commonNADs := ccmutil.GetCommonVMINADs(vmis) // {nad → interface}
-	if len(commonNADs) > 0 {
-		if err := h.annotateNodeWithInterfaceMapping(node.Name, commonNADs); err != nil {
-			return fmt.Errorf("failed to annotate node with interface-NAD mapping: %w", err)
+	mapping := ccmutil.GetCommonVMINADs(vmis)
+
+	nodes, err := h.nodeCache.List(labels.Everything())
+	if err != nil {
+		return fmt.Errorf("failed to list nodes: %w", err)
+	}
+
+	for _, n := range nodes {
+		if err := h.annotateNodeWithInterfaceMapping(n.Name, mapping); err != nil {
+			return fmt.Errorf("failed to annotate node %s with interface-NAD mapping: %w", n.Name, err)
 		}
 	}
 
@@ -188,18 +194,23 @@ func (h *Handler) annotateNodeWithNADInfo(node *corev1.Node) error {
 // annotateNodeWithInterfaceMapping stores the NAD->interface mapping as a JSON annotation
 // on the Kubernetes Node so that frontends can query it via the K8s API.
 func (h *Handler) annotateNodeWithInterfaceMapping(nodeName string, mapping map[string]string) error {
-	data, err := json.Marshal(mapping)
-	if err != nil {
-		return fmt.Errorf("marshal interface mapping: %w", err)
+	var value string
+
+	if len(mapping) != 0 {
+		data, err := json.Marshal(mapping)
+		if err != nil {
+			return fmt.Errorf("marshal interface mapping: %w", err)
+		}
+		value = string(data)
 	}
-	value := string(data)
 
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		node, err := h.nodeClient.Get(nodeName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
-		if node.Annotations[utils.KeyInterfaceNADMapping] == value {
+		existing, keyExists := node.Annotations[utils.KeyInterfaceNADMapping]
+		if keyExists && existing == value {
 			return nil
 		}
 		nodeCopy := node.DeepCopy()

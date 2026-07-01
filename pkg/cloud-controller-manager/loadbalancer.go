@@ -186,7 +186,9 @@ func (l *LoadBalancerManager) checkNetworkBinding(service *v1.Service, nodes []*
 
 	mappingStr := node.Annotations[utils.KeyInterfaceNADMapping]
 	if mappingStr == "" {
-		return fmt.Errorf("%s does not exist on node %s", utils.KeyInterfaceNADMapping, node.Name)
+		// If the node doesn't have the annotation, just let it pass.
+		// Like we don't have the annotation before and follow the old behavior.
+		return nil
 	}
 
 	var mapping map[string]string
