@@ -1,12 +1,14 @@
 package util
 
-import kubevirtv1 "kubevirt.io/api/core/v1"
+import (
+	kubevirtv1 "kubevirt.io/api/core/v1"
+)
 
-// getInterfaceToNADMapping builds a map of Linux interface name -> Multus NAD name
+// getNADToInterfaceMapping builds a map of Multus NAD name -> Linux interface name
 // by joining VMI spec networks with VMI status interfaces (reported by the guest agent).
-// Example result: {"enp1s0": "default/mgmt-vlan1", "enp2s0": "default/net123"}
+// Example result: {"default/mgmt-vlan1": "enp1s0", "default/net123": "enp2s0"}
 // Interfaces without a Multus network (e.g. calico, kube-vip macvlan) are excluded.
-func getInterfaceToNADMapping(vmi *kubevirtv1.VirtualMachineInstance) map[string]string {
+func getNADToInterfaceMapping(vmi *kubevirtv1.VirtualMachineInstance) map[string]string {
 	nameToNAD := make(map[string]string, len(vmi.Spec.Networks))
 	for _, net := range vmi.Spec.Networks {
 		if net.Multus != nil {
@@ -20,7 +22,7 @@ func getInterfaceToNADMapping(vmi *kubevirtv1.VirtualMachineInstance) map[string
 			continue
 		}
 		if nad, ok := nameToNAD[iface.Name]; ok {
-			result[iface.InterfaceName] = nad
+			result[nad] = iface.InterfaceName
 		}
 	}
 	return result
@@ -43,24 +45,27 @@ func GetCommonVMINADs(vmis []kubevirtv1.VirtualMachineInstance) map[string]strin
 	if len(vmis) == 0 {
 		return nil
 	}
-	// Invert the first VMI's interface->NAD mapping to get NAD->interface.
-	result := invertStringMap(getInterfaceToNADMapping(&vmis[0]))
+
+	// Early exit if the first VMI doesn't have status info yet
+	if len(vmis[0].Status.Interfaces) == 0 {
+		return nil
+	}
+
+	result := getNADToInterfaceMapping(&vmis[0])
 	for _, vmi := range vmis[1:] {
-		curr := invertStringMap(getInterfaceToNADMapping(&vmi))
+		if len(vmi.Status.Interfaces) == 0 {
+			return nil // Guest agent data missing on one VM; consensus unknown
+		}
+
+		curr := getNADToInterfaceMapping(&vmi)
+
 		for nad, iface := range result {
-			if curr[nad] != iface {
+			currIface, exists := curr[nad]
+			if !exists || currIface != iface {
 				delete(result, nad)
 			}
 		}
 	}
-	return result
-}
 
-// invertStringMap returns a new map with keys and values swapped.
-func invertStringMap(m map[string]string) map[string]string {
-	result := make(map[string]string, len(m))
-	for k, v := range m {
-		result[v] = k
-	}
 	return result
 }

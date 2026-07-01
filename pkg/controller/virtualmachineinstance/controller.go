@@ -155,7 +155,14 @@ func isMigrationCompleted(vmi *kubevirtv1.VirtualMachineInstance) bool {
 // annotateNodeWithNADInfo computes the common NAD→interface mapping across all VMIs
 // in this guest cluster and writes it onto the Kubernetes Node annotation.
 func (h *Handler) annotateNodeWithNADInfo(node *corev1.Node) error {
-	sel := labels.Set{utils.LabelKeyGuestClusterNameOnVM: cfg.GetConfig().ClusterName}.AsSelector()
+	clusterName := cfg.GetConfig().ClusterName
+
+	if clusterName == "" || clusterName == utils.DefaultGuestClusterName {
+		// Return an error and exit early to prevent cross-cluster pollution
+		return fmt.Errorf("failed to annotate node: guest cluster name configuration is empty/default, we cannot identify the cluster")
+	}
+
+	sel := labels.Set{utils.LabelKeyGuestClusterNameOnVM: clusterName}.AsSelector()
 	vmiPtrs, err := h.vmiCache.List(h.namespace, sel)
 	if err != nil {
 		return err

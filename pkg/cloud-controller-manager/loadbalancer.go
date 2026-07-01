@@ -124,6 +124,7 @@ func checkDHCPServiceInterface(service *v1.Service, nodeName string, mapping map
 	if lbv1.IPAM(service.Annotations[utils.KeyIPAM]) != lbv1.DHCP {
 		return nil
 	}
+
 	serviceInterface := service.Annotations[utils.KeyKubevipServiceInterface]
 	if serviceInterface == "" {
 		return nil
@@ -134,7 +135,8 @@ func checkDHCPServiceInterface(service *v1.Service, nodeName string, mapping map
 			return nil
 		}
 	}
-	return fmt.Errorf("only support dhcp in a symmetric network")
+
+	return fmt.Errorf("service interface %s does not existi on all nodes, dhcp is only supported in a symmetric network", serviceInterface)
 }
 
 // checkIPPoolNetworkMapping verifies that the requested cloudprovider.harvesterhci.io/network
@@ -167,20 +169,29 @@ func (l *LoadBalancerManager) checkNetworkBinding(service *v1.Service, nodes []*
 		return nil
 	}
 
+	if service.Annotations[utils.KeyKubevipServiceInterface] == "" && service.Annotations[utils.KeyNetwork] == "" {
+		// Don't need to proceed. This is the old behavior.
+		// In the original old behavior:
+		// - IPPool doesn't need utils.KeyNetwork
+		// - DHCP doesn't need utils.KeyKubevipServiceInterface
+		return nil
+	}
+
+	if len(nodes) == 0 {
+		return fmt.Errorf("no nodes available to validate network binding for service %s/%s", service.Namespace, service.Name)
+	}
+
 	// currently we only support symmetric network, so we only check the first node
 	node := nodes[0]
 
 	mappingStr := node.Annotations[utils.KeyInterfaceNADMapping]
 	if mappingStr == "" {
-		return fmt.Errorf("only support in a symmetric network, node %s has no interface-nad-mapping", node.Name)
-	}
-	var mapping map[string]string
-	if err := json.Unmarshal([]byte(mappingStr), &mapping); err != nil {
-		return fmt.Errorf("invalid interface-nad-mapping on node %s: %w", node.Name, err)
+		return fmt.Errorf("%s does not exist on node %s", utils.KeyInterfaceNADMapping, node.Name)
 	}
 
-	if mapping == nil {
-		return fmt.Errorf("only support in a symmetric network, node %s has no interface-nad-mapping", node.Name)
+	var mapping map[string]string
+	if err := json.Unmarshal([]byte(mappingStr), &mapping); err != nil || len(mapping) == 0 {
+		return fmt.Errorf("invalid %s on node %s: %w", utils.KeyInterfaceNADMapping, node.Name, err)
 	}
 
 	if err := checkDHCPServiceInterface(service, node.Name, mapping); err != nil {
