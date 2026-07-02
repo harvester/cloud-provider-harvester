@@ -111,6 +111,7 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 		lbClient:       cp.lbFactory.Loadbalancer().V1beta1().LoadBalancer(),
 		localSvcClient: cp.localCoreFactory.Core().V1().Service(),
 		localSvcCache:  cp.localCoreFactory.Core().V1().Service().Cache(),
+		configMapCache: cp.localCoreFactory.Core().V1().ConfigMap().Cache(),
 		namespace:      namespace,
 	}
 	cp.instances = &instanceManager{
@@ -133,6 +134,7 @@ func (c *CloudProvider) Initialize(clientBuilder cloudprovider.ControllerClientB
 			c.Context,
 			client,
 			c.localCoreFactory.Core().V1().Node(),
+			c.localCoreFactory.Core().V1().ConfigMap(),
 			c.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
 			c.kubevirtClient,
 			c.nodeToVMName,
@@ -141,7 +143,7 @@ func (c *CloudProvider) Initialize(clientBuilder cloudprovider.ControllerClientB
 	}
 
 	go func() {
-		if err := start.All(c.Context, threadiness, c.kubevirtFactory, c.localCoreFactory); err != nil {
+		if err := start.All(c.Context, threadiness, c.kubevirtFactory, c.localCoreFactory, c.lbFactory); err != nil {
 			klog.Fatalf("error starting controllers: %s", err.Error())
 		}
 		<-stop

@@ -39,6 +39,7 @@ type LoadBalancerManager struct {
 	lbClient       ctllbv1.LoadBalancerClient
 	localSvcClient wranglecorev1.ServiceClient
 	localSvcCache  wranglecorev1.ServiceCache
+	configMapCache wranglecorev1.ConfigMapCache
 	namespace      string
 }
 
@@ -116,8 +117,96 @@ func (l *LoadBalancerManager) getPrimaryService(service *v1.Service) (*v1.Servic
 	return primarySvc, nil
 }
 
+// checkNetworkInMapping verifies that the service's network annotation is present
+// as a key in the NAD mapping. No-ops if there is no network annotation.
+func checkNetworkInMapping(service *v1.Service, mapping map[string]string) error {
+	serviceNetwork := service.Annotations[utils.KeyNetwork]
+	if serviceNetwork == "" {
+		return nil
+	}
+
+	if _, ok := mapping[serviceNetwork]; !ok {
+		return fmt.Errorf("network %s is not consistently available across all nodes in a symmetric network", serviceNetwork)
+	}
+
+	return nil
+}
+
+// checkNetworkBinding validates that the service's network configuration is consistent
+// with the NAD->interface mapping stored in the ConfigMap. It delegates to the
+// IPAM-specific check functions.
+func (l *LoadBalancerManager) checkNetworkBinding(service *v1.Service, nodes []*v1.Node) error {
+	if service.Annotations == nil {
+		return nil
+	}
+
+	if service.Annotations[utils.KeyNetwork] == "" {
+		// No network annotation present; skip symmetric-network validation.
+		// Services that do not specify a network (e.g. old-style configurations)
+		// are passed through without validation.
+		return nil
+	}
+
+	mapping, err := utils.GetNADInterfaceMapping(l.configMapCache)
+	if err != nil {
+		return err
+	}
+	if mapping == nil {
+		// ConfigMap not present yet; no mapping stored, pass through.
+		return nil
+	}
+	if len(mapping) == 0 {
+		return fmt.Errorf("there is no common NAD mapping: %s/%s is empty", metav1.NamespaceSystem, utils.ConfigMapNADMapping)
+	}
+
+	if err := checkNetworkInMapping(service, mapping); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// resolveInterfaceFromNetwork looks up the NAD mapping ConfigMap and returns the VM
+// interface name corresponding to the service's network annotation.
+// This applies to both DHCP and IPPool modes.
+// Returns ("", nil) if:
+//   - the service has no annotations
+//   - the service has no network annotation
+//   - the NAD mapping ConfigMap does not exist yet
+//
+// Returns ("", error) if the ConfigMap exists but the network is not present in the mapping.
+func (l *LoadBalancerManager) resolveInterfaceFromNetwork(service *v1.Service) (string, error) {
+	if service.Annotations == nil {
+		return "", nil
+	}
+
+	network := service.Annotations[utils.KeyNetwork]
+	if network == "" {
+		return "", nil
+	}
+
+	mapping, err := utils.GetNADInterfaceMapping(l.configMapCache)
+	if err != nil {
+		return "", err
+	}
+	if len(mapping) == 0 {
+		return "", nil
+	}
+
+	iface, ok := mapping[network]
+	if !ok {
+		return "", fmt.Errorf("network %s not found in NAD mapping for service %s/%s", network, service.Namespace, service.Name)
+	}
+
+	return iface, nil
+}
+
 // EnsureLoadBalancer is to create/update a Harvester load balancer for the service
 func (l *LoadBalancerManager) EnsureLoadBalancer(ctx context.Context, clusterName string, service *v1.Service, nodes []*v1.Node) (*v1.LoadBalancerStatus, error) {
+	if err := l.checkNetworkBinding(service, nodes); err != nil {
+		return nil, err
+	}
+
 	primarySvc, err := l.getPrimaryService(service)
 	if err != nil {
 		return nil, err
@@ -336,11 +425,37 @@ func (l *LoadBalancerManager) retryUpdateService(service *v1.Service, serviceTyp
 	return nil
 }
 
-func isPrimaryServiceUpdatedWithIP(service *v1.Service, lbAddress, ip string) bool {
-	return service.Annotations != nil && service.Annotations[utils.KeyKubevipLoadBalancerIP] == ip && lbAddress == ip && service.Labels != nil && service.Labels[utils.KeyPrimaryService] == ""
+func isPrimaryServiceUpdatedWithIP(service *v1.Service, lbAddress, ip, resolvedIface string) bool {
+	if resolvedIface != "" {
+		// Interface must be written exactly.
+		if service.Annotations[utils.KeyKubevipServiceInterface] != resolvedIface {
+			return false
+		}
+		// For DHCP, the network annotation must also have been removed.
+		if lbv1.IPAM(service.Annotations[utils.KeyIPAM]) == lbv1.DHCP &&
+			service.Annotations[utils.KeyNetwork] != "" {
+			return false
+		}
+	}
+
+	// When there is no network annotation — we cannot determine the expected interface, so we only
+	// check the IP and let the serviceInterface annotation remain as-is.
+	return service.Annotations != nil &&
+		service.Annotations[utils.KeyKubevipLoadBalancerIP] == ip &&
+		lbAddress == ip &&
+		service.Labels != nil &&
+		service.Labels[utils.KeyPrimaryService] == ""
 }
 
 func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, service *v1.Service) error {
+	// Resolve the Linux interface from the network annotation for both DHCP and IPPool.
+	// checkNetworkBinding has already validated that the network is present in the NAD
+	// mapping, so an error here is unexpected but handled gracefully.
+	resolvedIface, err := l.resolveInterfaceFromNetwork(service)
+	if err != nil {
+		return fmt.Errorf("resolve interface for service %s/%s: %w", service.Namespace, service.Name, err)
+	}
+
 	object, ip, err := waitForIP(func() (runtime.Object, string, error) {
 		lb, err := l.lbClient.Get(l.namespace, lbName, metav1.GetOptions{})
 		if err != nil {
@@ -357,7 +472,7 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 	}
 
 	lb := object.(*lbv1.LoadBalancer)
-	if isPrimaryServiceUpdatedWithIP(service, lb.Status.Address, ip) {
+	if isPrimaryServiceUpdatedWithIP(service, lb.Status.Address, ip, resolvedIface) {
 		return nil
 	}
 
@@ -369,6 +484,18 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 			serviceCopy.Annotations = make(map[string]string)
 		}
 		serviceCopy.Annotations[utils.KeyKubevipLoadBalancerIP] = ip
+
+		if resolvedIface != "" {
+			serviceCopy.Annotations[utils.KeyKubevipServiceInterface] = resolvedIface
+		}
+
+		// For DHCP, remove the network annotation only after the interface has been
+		// successfully resolved and written. If resolution was not possible (e.g. the
+		// NAD mapping ConfigMap is not yet available), leave network intact so the next
+		// reconciliation can retry with the mapping once it exists.
+		if lbv1.IPAM(serviceCopy.Annotations[utils.KeyIPAM]) == lbv1.DHCP && resolvedIface != "" {
+			delete(serviceCopy.Annotations, utils.KeyNetwork)
+		}
 	}
 
 	// the above waitForIP takes time, it has high chance to hit the `IsConflict` error like
@@ -377,7 +504,12 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 }
 
 func isSecondaryServiceUpdatedWithPrimary(secondary *v1.Service, ip, labelValue string) bool {
-	return secondary.Annotations != nil && secondary.Annotations[utils.KeyKubevipLoadBalancerIP] == ip && secondary.Annotations[utils.KeyIPAM] == "" && secondary.Labels != nil && secondary.Labels[utils.KeyPrimaryService] == labelValue
+	return secondary.Annotations != nil &&
+		secondary.Annotations[utils.KeyKubevipLoadBalancerIP] == ip &&
+		secondary.Annotations[utils.KeyKubevipServiceInterface] == "" &&
+		secondary.Annotations[utils.KeyIPAM] == "" &&
+		secondary.Labels != nil &&
+		secondary.Labels[utils.KeyPrimaryService] == labelValue
 }
 
 func (l *LoadBalancerManager) updateSecondaryServiceLoadBalancerIP(ip string, primary, secondary *v1.Service) error {
@@ -397,6 +529,7 @@ func (l *LoadBalancerManager) updateSecondaryServiceLoadBalancerIP(ip string, pr
 		secondaryCopy.Labels[utils.KeyPrimaryService] = primaryLabel
 		// update the annotations and kube-vip will update the service status load balancer
 		secondaryCopy.Annotations[utils.KeyKubevipLoadBalancerIP] = ip
+		delete(secondaryCopy.Annotations, utils.KeyKubevipServiceInterface)
 		delete(secondaryCopy.Annotations, utils.KeyIPAM)
 	}
 
