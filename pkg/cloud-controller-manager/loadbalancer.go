@@ -37,11 +37,11 @@ const (
 // Secondary service is the load balancer service which will share the load balancer created by the primary service. It has the annotation "cloudprovider.harvesterhci.io/primary-service" to specify the primary service.
 
 type LoadBalancerManager struct {
-	lbClient        ctllbv1.LoadBalancerClient
-	localSvcClient  wranglecorev1.ServiceClient
-	localSvcCache   wranglecorev1.ServiceCache
-	configMapCache  wranglecorev1.ConfigMapCache
-	namespace       string
+	lbClient       ctllbv1.LoadBalancerClient
+	localSvcClient wranglecorev1.ServiceClient
+	localSvcCache  wranglecorev1.ServiceCache
+	configMapCache wranglecorev1.ConfigMapCache
+	namespace      string
 }
 
 func (l *LoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName string, service *v1.Service) (status *v1.LoadBalancerStatus, exists bool, err error) {
@@ -186,12 +186,16 @@ func (l *LoadBalancerManager) checkNetworkBinding(service *v1.Service, nodes []*
 
 	mappingStr := cm.Data[utils.ConfigMapKeyNADMapping]
 	if mappingStr == "" {
-		return nil
+		return fmt.Errorf("there is no common NAD mapping: %s/%s is empty", cm.Namespace, cm.Name)
 	}
 
 	var mapping map[string]string
-	if err := json.Unmarshal([]byte(mappingStr), &mapping); err != nil || len(mapping) == 0 {
+	if err := json.Unmarshal([]byte(mappingStr), &mapping); err != nil {
 		return fmt.Errorf("invalid %s in ConfigMap %s: %w", utils.ConfigMapKeyNADMapping, utils.ConfigMapNADMapping, err)
+	}
+
+	if len(mapping) == 0 {
+		return fmt.Errorf("there is no common NAD mapping: %s/%s is empty", cm.Namespace, cm.Name)
 	}
 
 	if err := checkDHCPServiceInterface(service, mapping); err != nil {
@@ -440,7 +444,8 @@ func expectedServiceInterface(service *v1.Service) string {
 		return v
 	}
 
-	if lbv1.IPAM(service.Annotations[utils.KeyIPAM]) == lbv1.Pool {
+	// Default IPAM is Pool
+	if service.Annotations[utils.KeyIPAM] == "" || lbv1.IPAM(service.Annotations[utils.KeyIPAM]) == lbv1.Pool {
 		return utils.KubevipAutoInterface
 	}
 
@@ -501,7 +506,7 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 func isSecondaryServiceUpdatedWithPrimary(secondary *v1.Service, ip, labelValue string) bool {
 	return secondary.Annotations != nil &&
 		secondary.Annotations[utils.KeyKubevipLoadBalancerIP] == ip &&
-		secondary.Annotations[utils.KeyKubevipServiceInterface] == utils.KubevipAutoInterface &&
+		secondary.Annotations[utils.KeyKubevipServiceInterface] == expectedServiceInterface(secondary) &&
 		secondary.Annotations[utils.KeyIPAM] == "" &&
 		secondary.Labels != nil &&
 		secondary.Labels[utils.KeyPrimaryService] == labelValue
@@ -524,7 +529,7 @@ func (l *LoadBalancerManager) updateSecondaryServiceLoadBalancerIP(ip string, pr
 		secondaryCopy.Labels[utils.KeyPrimaryService] = primaryLabel
 		// update the annotations and kube-vip will update the service status load balancer
 		secondaryCopy.Annotations[utils.KeyKubevipLoadBalancerIP] = ip
-		secondaryCopy.Annotations[utils.KeyKubevipServiceInterface] = utils.KubevipAutoInterface
+		secondaryCopy.Annotations[utils.KeyKubevipServiceInterface] = expectedServiceInterface(secondaryCopy)
 		delete(secondaryCopy.Annotations, utils.KeyIPAM)
 	}
 

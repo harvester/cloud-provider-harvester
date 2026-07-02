@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	cfg "github.com/harvester/harvester-cloud-provider/pkg/config"
-	ccmutil "github.com/harvester/harvester-cloud-provider/pkg/util"
 	utils "github.com/harvester/harvester-cloud-provider/pkg/utils"
 	"github.com/harvester/harvester/pkg/builder"
 	ctlv1 "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1"
@@ -81,7 +80,7 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 	}
 
 	// only handle the migration completed vmi
-	if vmi.Annotations == nil || vmi.Labels == nil || vmi.Namespace != h.namespace || !isMigrationCompleted(vmi) {
+	if vmi.Annotations == nil || vmi.Labels == nil || vmi.Namespace != h.namespace || !utils.IsMigrationCompleted(vmi) {
 		logrus.WithFields(logrus.Fields{
 			"namespace": vmi.Namespace,
 			"name":      vmi.Name,
@@ -149,10 +148,6 @@ func compareTopology(a map[string]string, b map[string]string) bool {
 		a[corev1.LabelTopologyZone] == b[corev1.LabelTopologyZone]
 }
 
-func isMigrationCompleted(vmi *kubevirtv1.VirtualMachineInstance) bool {
-	return vmi.Status.MigrationState == nil || vmi.Status.MigrationState.Completed
-}
-
 // syncNADMappingConfigMap computes the common NAD→interface mapping across all VMIs
 // in this guest cluster and stores it in a ConfigMap in kube-system.
 // If the mapping is empty, the value is cleared (set to "").
@@ -171,7 +166,7 @@ func (h *Handler) syncNADMappingConfigMap() error {
 	}
 
 	var value string
-	if mapping := ccmutil.GetCommonVMINADs(vmis); len(mapping) > 0 {
+	if mapping := utils.GetCommonVMINADs(vmis); len(mapping) > 0 {
 		data, err := json.Marshal(mapping)
 		if err != nil {
 			return fmt.Errorf("marshal NAD mapping: %w", err)

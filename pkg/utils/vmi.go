@@ -1,4 +1,4 @@
-package util
+package utils
 
 import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -53,7 +53,7 @@ func GetCommonVMINADs(vmis []*kubevirtv1.VirtualMachineInstance) map[string]stri
 		if vmi == nil {
 			continue
 		}
-		if vmi.Status.Phase == kubevirtv1.Running && len(vmi.Status.Interfaces) > 0 {
+		if IsRunning(vmi) && IsMigrationCompleted(vmi) && len(vmi.Status.Interfaces) > 0 {
 			active = append(active, *vmi)
 		}
 	}
@@ -74,4 +74,12 @@ func GetCommonVMINADs(vmis []*kubevirtv1.VirtualMachineInstance) map[string]stri
 	}
 
 	return result
+}
+
+func IsMigrationCompleted(vmi *kubevirtv1.VirtualMachineInstance) bool {
+	return vmi.Status.MigrationState == nil || vmi.Status.MigrationState.Completed
+}
+
+func IsRunning(vmi *kubevirtv1.VirtualMachineInstance) bool {
+	return vmi.Status.Phase == kubevirtv1.Running
 }
