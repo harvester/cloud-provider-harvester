@@ -185,6 +185,10 @@ func (l *LoadBalancerManager) EnsureLoadBalancer(ctx context.Context, clusterNam
 func (l *LoadBalancerManager) ensurePrimaryLoadBalancer(clusterName string, service *v1.Service) (*v1.LoadBalancerStatus, error) {
 	name := loadBalancerName(clusterName, service.Namespace, service.Name, string(service.UID))
 
+	if err := l.checkNetworkChanged(service, name, false); err != nil {
+		return nil, err
+	}
+
 	if err := l.createOrUpdateLoadBalancer(name, clusterName, service); err != nil {
 		return nil, fmt.Errorf("create or update lb %s/%s failed, error: %w", l.namespace, name, err)
 	}
@@ -211,6 +215,12 @@ func (l *LoadBalancerManager) ensureSecondaryLoadBalancer(clusterName string, pr
 		return nil, fmt.Errorf("check port overlap failed, primary service: %s/%s, secondary service: %s/%s, error: %w",
 			primary.Namespace, primary.Name, secondary.Namespace, secondary.Name, err)
 	}
+
+	primaryLBName := loadBalancerName(clusterName, primary.Namespace, primary.Name, string(primary.UID))
+	if err := l.checkNetworkChanged(secondary, primaryLBName, true); err != nil {
+		return nil, err
+	}
+
 	// delete the original load balancer if existing
 	if err := l.deleteLoadBalancer(clusterName, secondary); err != nil {
 		return nil, err
@@ -328,7 +338,17 @@ func (l *LoadBalancerManager) constructLB(oldLB *lbv1.LoadBalancer, service *v1.
 	if lb.Annotations == nil {
 		lb.Annotations = make(map[string]string)
 	}
-	lb.Annotations[pkgctllb.AnnotationKeyNetwork] = service.Annotations[utils.KeyNetwork]
+
+	if oldLB == nil || oldLB.Name == "" {
+		// if lb exists, doesn't overwrite the network annotation again
+		// we should use network from the lb directly
+		// because we don't allow network to be changed.
+		lb.Annotations[pkgctllb.AnnotationKeyNetwork] = service.Annotations[utils.KeyNetwork]
+
+		// keep original network request from the service at the first time if it presents, and don't overwrite it again if lb exists
+		lb.Annotations[utils.AnnotationKeyNetworkOnLB] = service.Annotations[utils.KeyNetwork]
+	}
+
 	lb.Annotations[pkgctllb.AnnotationKeyProject] = service.Annotations[utils.KeyProject]
 	lb.Annotations[pkgctllb.AnnotationKeyNamespace] = service.Annotations[utils.KeyNamespace]
 	lb.Annotations[pkgctllb.AnnotationKeyCluster] = clusterName
@@ -383,7 +403,7 @@ func (l *LoadBalancerManager) retryUpdateService(service *v1.Service, serviceTyp
 	return nil
 }
 
-func isPrimaryServiceUpdatedWithIP(service *v1.Service, lbAddress, ip, resolvedIface string) bool {
+func isPrimaryServiceUpdatedWithIP(service *v1.Service, lb *lbv1.LoadBalancer, ip, resolvedIface string) bool {
 	if resolvedIface != "" && service.Annotations[utils.KeyKubevipServiceInterface] != resolvedIface {
 		return false
 	}
@@ -392,7 +412,7 @@ func isPrimaryServiceUpdatedWithIP(service *v1.Service, lbAddress, ip, resolvedI
 	// check the IP and let the serviceInterface annotation remain as-is.
 	return service.Annotations != nil &&
 		service.Annotations[utils.KeyKubevipLoadBalancerIP] == ip &&
-		lbAddress == ip &&
+		lb.Status.Address == ip &&
 		service.Labels != nil &&
 		service.Labels[utils.KeyPrimaryService] == ""
 }
@@ -422,7 +442,8 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 	}
 
 	lb := object.(*lbv1.LoadBalancer)
-	if isPrimaryServiceUpdatedWithIP(service, lb.Status.Address, ip, resolvedIface) {
+
+	if isPrimaryServiceUpdatedWithIP(service, lb, ip, resolvedIface) {
 		return nil
 	}
 
@@ -434,7 +455,6 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 			serviceCopy.Annotations = make(map[string]string)
 		}
 		serviceCopy.Annotations[utils.KeyKubevipLoadBalancerIP] = ip
-
 		if resolvedIface != "" {
 			serviceCopy.Annotations[utils.KeyKubevipServiceInterface] = resolvedIface
 		}
@@ -445,7 +465,16 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 	return l.retryUpdateService(service, "primary", ip, "", updatePrimaryServiceObject)
 }
 
-func isSecondaryServiceUpdatedWithPrimary(secondary *v1.Service, ip, labelValue string) bool {
+func isSecondaryServiceUpdatedWithPrimary(primary, secondary *v1.Service, ip, labelValue string) bool {
+
+	// old dhcp svc doesn't have network annotation.
+	if hasNetworkAnnotation(primary) {
+		// the network from secondary should be same as primary, we don't allow users to change network annotation in svc
+		if secondary.Annotations[utils.KeyNetwork] != primary.Annotations[utils.KeyNetwork] {
+			return false
+		}
+	}
+
 	return secondary.Annotations != nil &&
 		secondary.Annotations[utils.KeyKubevipLoadBalancerIP] == ip &&
 		secondary.Annotations[utils.KeyKubevipServiceInterface] == "" &&
@@ -456,7 +485,7 @@ func isSecondaryServiceUpdatedWithPrimary(secondary *v1.Service, ip, labelValue 
 
 func (l *LoadBalancerManager) updateSecondaryServiceLoadBalancerIP(ip string, primary, secondary *v1.Service) error {
 	labelValue := primaryServiceLabelValue(primary)
-	if isSecondaryServiceUpdatedWithPrimary(secondary, ip, labelValue) {
+	if isSecondaryServiceUpdatedWithPrimary(primary, secondary, ip, labelValue) {
 		return nil
 	}
 
@@ -471,11 +500,53 @@ func (l *LoadBalancerManager) updateSecondaryServiceLoadBalancerIP(ip string, pr
 		secondaryCopy.Labels[utils.KeyPrimaryService] = primaryLabel
 		// update the annotations and kube-vip will update the service status load balancer
 		secondaryCopy.Annotations[utils.KeyKubevipLoadBalancerIP] = ip
+
+		// old dhcp svc doesn't have network annotation.
+		if hasNetworkAnnotation(primary) {
+			secondaryCopy.Annotations[utils.KeyNetwork] = primary.Annotations[utils.KeyNetwork]
+		}
+
 		delete(secondaryCopy.Annotations, utils.KeyKubevipServiceInterface)
 		delete(secondaryCopy.Annotations, utils.KeyIPAM)
 	}
 
 	return l.retryUpdateService(secondary, "secondary", ip, labelValue, updateSecondaryServiceObject)
+}
+
+func hasNetworkAnnotation(service *v1.Service) bool {
+	return service.Annotations[utils.KeyNetwork] != ""
+}
+
+func IsNetworkChanged(svc *v1.Service, lb *lbv1.LoadBalancer) bool {
+	return svc.Annotations[utils.KeyNetwork] != lb.Annotations[utils.AnnotationKeyNetworkOnLB]
+}
+
+func (l *LoadBalancerManager) checkNetworkChanged(svc *v1.Service, lbName string, secondary bool) error {
+	lb, err := l.lbClient.Get(l.namespace, lbName, metav1.GetOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	if lb == nil || lb.Name == "" {
+		return nil
+	}
+
+	if secondary {
+		if svc.Annotations[utils.KeyNetwork] == "" && lb.Annotations[utils.AnnotationKeyNetworkOnLB] != "" {
+			// skip the check
+			// because secondary service doesn't have network annotation yet
+			// we need to sync from the primay service
+			return nil
+		}
+	}
+
+	// // Don't allow users to change network annotation in svc for existed load balancer.
+	if IsNetworkChanged(svc, lb) {
+		return fmt.Errorf("network annotation of service %s/%s is not same as the load balancer %s/%s, service: '%s', lb: '%s'",
+			svc.Namespace, svc.Name, lb.Namespace, lb.Name, svc.Annotations[utils.KeyNetwork], lb.Annotations[pkgctllb.AnnotationKeyNetwork])
+	}
+
+	return nil
 }
 
 func (l *LoadBalancerManager) deleteLoadBalancer(clusterName string, service *v1.Service) error {

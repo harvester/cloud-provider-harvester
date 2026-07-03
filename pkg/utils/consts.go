@@ -55,6 +55,11 @@ const (
 	// value format: `default/vlan100`
 	AnnotationKeyGuestClusterManagementNetworkOnLB = HarvesterCloudProviderPrefix + NetworkTypeManagement
 
+	// AnnotationKeyNetworkOnLB stores the raw network name (namespace/name format, e.g. "default/net123")
+	// on the LoadBalancer object. This replaces the label-based approach (utils.KeyNetwork label)
+	// which required sanitizing '/' to '_' because label values cannot contain slashes.
+	AnnotationKeyNetworkOnLB = HarvesterCloudProviderPrefix + "lb-network"
+
 	// cloud-provider framework injects `kubernetes` as cluster-name when runtime env `--cluster-name` is not set
 	// if `--cluster-name=abc` then `cluster-name` is `abc`
 	// if `--cluster-name=` then `cluster-name` is `` (empty)
