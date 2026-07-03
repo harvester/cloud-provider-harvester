@@ -1,16 +1,20 @@
 package ccm
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	lbv1 "github.com/harvester/harvester-load-balancer/pkg/apis/loadbalancer.harvesterhci.io/v1beta1"
 	"github.com/sirupsen/logrus/hooks/test"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	cfg "github.com/harvester/harvester-cloud-provider/pkg/config"
 	utils "github.com/harvester/harvester-cloud-provider/pkg/utils"
+	"github.com/harvester/harvester-cloud-provider/pkg/utils/fakeclients"
 )
 
 const defaultUID = "d4b50d98-39ec-4d88-8098-36579de5db4a"
@@ -41,6 +45,18 @@ func Test_getLoadBalancerName(t *testing.T) {
 				t.Errorf("invalid name %s, args: %+v, wantPrefix: %s", name, tt.args, tt.wantPrefix)
 			}
 		})
+	}
+}
+
+func newServiceWithAnnotations(annotations map[string]string, labels map[string]string) *v1.Service {
+	return &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:   "default",
+			Name:        "test-svc",
+			UID:         types.UID(defaultUID),
+			Annotations: annotations,
+			Labels:      labels,
+		},
 	}
 }
 
@@ -88,6 +104,167 @@ func Test_warnClusterName(t *testing.T) {
 			if hasWarning != tt.shouldWarn {
 				t.Errorf("Expected warning: %v, but got: %v. Log output: %s",
 					tt.shouldWarn, hasWarning, msg)
+			}
+		})
+	}
+}
+
+func Test_isPrimaryServiceUpdatedWithIP(t *testing.T) {
+	const ip = "192.168.101.57"
+
+	tests := []struct {
+		name          string
+		annotations   map[string]string
+		labels        map[string]string
+		lbAddress     string
+		ip            string
+		resolvedIface string
+		want          bool
+	}{
+		{
+			// No network annotation → no interface resolved → serviceInterface absent is correct.
+			name: "fully_updated_no_network",
+			annotations: map[string]string{
+				utils.KeyKubevipLoadBalancerIP: ip,
+			},
+			labels:    map[string]string{utils.KeyPrimaryService: ""},
+			lbAddress: ip,
+			ip:        ip,
+			want:      true,
+		},
+		{
+			// When resolvedIface is empty, any existing serviceInterface is left untouched.
+			name: "no_network_existing_interface_preserved",
+			annotations: map[string]string{
+				utils.KeyKubevipLoadBalancerIP:   ip,
+				utils.KeyKubevipServiceInterface: "eth0",
+			},
+			labels:    map[string]string{utils.KeyPrimaryService: ""},
+			lbAddress: ip,
+			ip:        ip,
+			want:      true,
+		},
+		{
+			name: "ip_mismatch",
+			annotations: map[string]string{
+				utils.KeyKubevipLoadBalancerIP: "192.168.101.1",
+			},
+			labels:    map[string]string{utils.KeyPrimaryService: ""},
+			lbAddress: ip,
+			ip:        ip,
+			want:      false,
+		},
+		{
+			// DHCP first run: user provided network but serviceInterface not yet written.
+			name: "dhcp_network_present_not_yet_converted",
+			annotations: map[string]string{
+				utils.KeyKubevipLoadBalancerIP: ip,
+				utils.KeyIPAM:                  string(lbv1.DHCP),
+				utils.KeyNetwork:               "default/mgmt-vlan1",
+			},
+			labels:        map[string]string{utils.KeyPrimaryService: ""},
+			lbAddress:     ip,
+			ip:            ip,
+			resolvedIface: "enp1s0",
+			want:          false,
+		},
+		{
+			// DHCP: NAD mapping unavailable (resolvedIface empty) — treated as up-to-date
+			// so the network annotation is preserved for the next reconciliation.
+			name: "dhcp_mapping_unavailable_network_preserved",
+			annotations: map[string]string{
+				utils.KeyKubevipLoadBalancerIP: ip,
+				utils.KeyIPAM:                  string(lbv1.DHCP),
+				utils.KeyNetwork:               "default/mgmt-vlan1",
+			},
+			labels:    map[string]string{utils.KeyPrimaryService: ""},
+			lbAddress: ip,
+			ip:        ip,
+			// resolvedIface left empty (zero value) — mapping unavailable
+			want: true,
+		},
+		{
+			// DHCP fully converted on a previous reconciliation; no network annotation
+			// remains. resolvedIface is empty because there is nothing to look up, but
+			// the interface must not be erased.
+			name: "dhcp_after_conversion_interface_preserved",
+			annotations: map[string]string{
+				utils.KeyKubevipLoadBalancerIP:   ip,
+				utils.KeyKubevipServiceInterface: "enp1s0",
+				utils.KeyIPAM:                    string(lbv1.DHCP),
+			},
+			labels:    map[string]string{utils.KeyPrimaryService: ""},
+			lbAddress: ip,
+			ip:        ip,
+			// resolvedIface empty — no network annotation left, mapping not consulted
+			want: true,
+		},
+		{
+			// DHCP: interface written but network annotation not yet removed.
+			name: "dhcp_interface_set_but_network_not_removed",
+			annotations: map[string]string{
+				utils.KeyKubevipLoadBalancerIP:   ip,
+				utils.KeyKubevipServiceInterface: "enp1s0",
+				utils.KeyIPAM:                    string(lbv1.DHCP),
+				utils.KeyNetwork:                 "default/mgmt-vlan1",
+			},
+			labels:        map[string]string{utils.KeyPrimaryService: ""},
+			lbAddress:     ip,
+			ip:            ip,
+			resolvedIface: "enp1s0",
+			want:          true,
+		},
+		{
+			// DHCP fully converted: serviceInterface set and network annotation removed.
+			name: "dhcp_fully_converted",
+			annotations: map[string]string{
+				utils.KeyKubevipLoadBalancerIP:   ip,
+				utils.KeyKubevipServiceInterface: "enp1s0",
+				utils.KeyIPAM:                    string(lbv1.DHCP),
+			},
+			labels:        map[string]string{utils.KeyPrimaryService: ""},
+			lbAddress:     ip,
+			ip:            ip,
+			resolvedIface: "enp1s0",
+			want:          true,
+		},
+		{
+			// IPPool: interface not yet resolved.
+			name: "ippool_interface_not_yet_set",
+			annotations: map[string]string{
+				utils.KeyKubevipLoadBalancerIP: ip,
+				utils.KeyIPAM:                  string(lbv1.Pool),
+				utils.KeyNetwork:               "default/mgmt-vlan1",
+			},
+			labels:        map[string]string{utils.KeyPrimaryService: ""},
+			lbAddress:     ip,
+			ip:            ip,
+			resolvedIface: "enp1s0",
+			want:          false,
+		},
+		{
+			// IPPool fully converted: serviceInterface set, network annotation kept.
+			name: "ippool_fully_converted",
+			annotations: map[string]string{
+				utils.KeyKubevipLoadBalancerIP:   ip,
+				utils.KeyKubevipServiceInterface: "enp1s0",
+				utils.KeyIPAM:                    string(lbv1.Pool),
+				utils.KeyNetwork:                 "default/mgmt-vlan1",
+			},
+			labels:        map[string]string{utils.KeyPrimaryService: ""},
+			lbAddress:     ip,
+			ip:            ip,
+			resolvedIface: "enp1s0",
+			want:          true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newServiceWithAnnotations(tt.annotations, tt.labels)
+			got := isPrimaryServiceUpdatedWithIP(svc, tt.lbAddress, tt.ip, tt.resolvedIface)
+			if got != tt.want {
+				t.Errorf("isPrimaryServiceUpdatedWithIP() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -189,6 +366,144 @@ func Test_patchLB_Priority(t *testing.T) {
 
 			if diff := cmp.Diff(tt.expectedAnnotations, actual); diff != "" {
 				t.Errorf("patchLB() result mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func Test_isSecondaryServiceUpdatedWithPrimary(t *testing.T) {
+	const (
+		ip         = "192.168.101.57"
+		labelValue = "default.primary-svc"
+	)
+
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		labels      map[string]string
+		want        bool
+	}{
+		{
+			// Fully updated: no serviceInterface annotation (interface is not set for secondary).
+			name: "fully_updated",
+			annotations: map[string]string{
+				utils.KeyKubevipLoadBalancerIP: ip,
+				utils.KeyIPAM:                  "",
+			},
+			labels: map[string]string{utils.KeyPrimaryService: labelValue},
+			want:   true,
+		},
+		{
+			name: "ip_mismatch",
+			annotations: map[string]string{
+				utils.KeyKubevipLoadBalancerIP: "192.168.101.1",
+				utils.KeyIPAM:                  "",
+			},
+			labels: map[string]string{utils.KeyPrimaryService: labelValue},
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newServiceWithAnnotations(tt.annotations, tt.labels)
+			got := isSecondaryServiceUpdatedWithPrimary(svc, ip, labelValue)
+			if got != tt.want {
+				t.Errorf("isSecondaryServiceUpdatedWithPrimary() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+func newNADMappingConfigMap(mapping map[string]string) *v1.ConfigMap {
+	data, _ := json.Marshal(mapping)
+	return &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      utils.ConfigMapNADMapping,
+			Namespace: metav1.NamespaceSystem,
+		},
+		Data: map[string]string{
+			utils.ConfigMapKeyNADMapping: string(data),
+		},
+	}
+}
+
+func Test_resolveNetworkInterface(t *testing.T) {
+	const svcNS, svcName = "default", "my-svc"
+
+	validMapping := map[string]string{
+		"default/net123": "enp2s0",
+		"default/mgmt":   "enp1s0",
+	}
+
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		cache       *fakeclients.ConfigMapCache
+		wantErr     bool
+	}{
+		{
+			name:        "no relevant annotations: always pass",
+			annotations: map[string]string{},
+			cache:       fakeclients.NewConfigMapCache(nil, nil),
+			wantErr:     false,
+		},
+		{
+			name: "ConfigMap not found: pass through",
+			annotations: map[string]string{
+				utils.KeyNetwork: "default/mgmt",
+				utils.KeyIPAM:    string(lbv1.DHCP),
+			},
+			cache:   fakeclients.NewConfigMapCache(nil, nil),
+			wantErr: false,
+		},
+		{
+			name: "DHCP: network present in mapping",
+			annotations: map[string]string{
+				utils.KeyNetwork: "default/net123",
+				utils.KeyIPAM:    string(lbv1.DHCP),
+			},
+			cache:   fakeclients.NewConfigMapCache(newNADMappingConfigMap(validMapping), nil),
+			wantErr: false,
+		},
+		{
+			name: "DHCP: network not in mapping",
+			annotations: map[string]string{
+				utils.KeyNetwork: "default/unknown-net",
+				utils.KeyIPAM:    string(lbv1.DHCP),
+			},
+			cache:   fakeclients.NewConfigMapCache(newNADMappingConfigMap(validMapping), nil),
+			wantErr: true,
+		},
+		{
+			name: "Pool: network NAD present in mapping",
+			annotations: map[string]string{
+				utils.KeyNetwork: "default/net123",
+				utils.KeyIPAM:    string(lbv1.Pool),
+			},
+			cache:   fakeclients.NewConfigMapCache(newNADMappingConfigMap(validMapping), nil),
+			wantErr: false,
+		},
+		{
+			name: "Pool: network NAD not in mapping",
+			annotations: map[string]string{
+				utils.KeyNetwork: "default/unknown-net",
+				utils.KeyIPAM:    string(lbv1.Pool),
+			},
+			cache:   fakeclients.NewConfigMapCache(newNADMappingConfigMap(validMapping), nil),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newServiceWithAnnotations(tt.annotations, nil)
+			svc.Namespace = svcNS
+			svc.Name = svcName
+
+			lbm := &LoadBalancerManager{configMapCache: tt.cache}
+			_, err := lbm.resolveNetworkInterface(svc)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("resolveNetworkInterface() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
