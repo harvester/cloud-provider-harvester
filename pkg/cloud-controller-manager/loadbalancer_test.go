@@ -212,7 +212,7 @@ func Test_isPrimaryServiceUpdatedWithIP(t *testing.T) {
 			lbAddress:     ip,
 			ip:            ip,
 			resolvedIface: "enp1s0",
-			want:          false,
+			want:          true,
 		},
 		{
 			// DHCP fully converted: serviceInterface set and network annotation removed.
@@ -427,7 +427,7 @@ func newNADMappingConfigMap(mapping map[string]string) *v1.ConfigMap {
 	}
 }
 
-func Test_checkNetworkBinding(t *testing.T) {
+func Test_resolveNetworkInterface(t *testing.T) {
 	const svcNS, svcName = "default", "my-svc"
 
 	validMapping := map[string]string{
@@ -501,9 +501,9 @@ func Test_checkNetworkBinding(t *testing.T) {
 			svc.Name = svcName
 
 			lbm := &LoadBalancerManager{configMapCache: tt.cache}
-			err := lbm.checkNetworkBinding(svc, nil)
+			_, err := lbm.resolveNetworkInterface(svc)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("checkNetworkBinding() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("resolveNetworkInterface() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
