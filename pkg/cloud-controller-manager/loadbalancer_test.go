@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	lbv1 "github.com/harvester/harvester-load-balancer/pkg/apis/loadbalancer.harvesterhci.io/v1beta1"
+	pkgctllb "github.com/harvester/harvester-load-balancer/pkg/controller/loadbalancer"
 	"github.com/sirupsen/logrus/hooks/test"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -117,6 +118,7 @@ func Test_isPrimaryServiceUpdatedWithIP(t *testing.T) {
 		annotations   map[string]string
 		labels        map[string]string
 		lbAddress     string
+		lbNetwork     string
 		ip            string
 		resolvedIface string
 		want          bool
@@ -164,6 +166,7 @@ func Test_isPrimaryServiceUpdatedWithIP(t *testing.T) {
 			},
 			labels:        map[string]string{utils.KeyPrimaryService: ""},
 			lbAddress:     ip,
+			lbNetwork:     "default/mgmt-vlan1",
 			ip:            ip,
 			resolvedIface: "enp1s0",
 			want:          false,
@@ -179,6 +182,7 @@ func Test_isPrimaryServiceUpdatedWithIP(t *testing.T) {
 			},
 			labels:    map[string]string{utils.KeyPrimaryService: ""},
 			lbAddress: ip,
+			lbNetwork: "default/mgmt-vlan1",
 			ip:        ip,
 			// resolvedIface left empty (zero value) — mapping unavailable
 			want: true,
@@ -210,6 +214,7 @@ func Test_isPrimaryServiceUpdatedWithIP(t *testing.T) {
 			},
 			labels:        map[string]string{utils.KeyPrimaryService: ""},
 			lbAddress:     ip,
+			lbNetwork:     "default/mgmt-vlan1",
 			ip:            ip,
 			resolvedIface: "enp1s0",
 			want:          true,
@@ -238,6 +243,7 @@ func Test_isPrimaryServiceUpdatedWithIP(t *testing.T) {
 			},
 			labels:        map[string]string{utils.KeyPrimaryService: ""},
 			lbAddress:     ip,
+			lbNetwork:     "default/mgmt-vlan1",
 			ip:            ip,
 			resolvedIface: "enp1s0",
 			want:          false,
@@ -253,6 +259,7 @@ func Test_isPrimaryServiceUpdatedWithIP(t *testing.T) {
 			},
 			labels:        map[string]string{utils.KeyPrimaryService: ""},
 			lbAddress:     ip,
+			lbNetwork:     "default/mgmt-vlan1",
 			ip:            ip,
 			resolvedIface: "enp1s0",
 			want:          true,
@@ -262,7 +269,17 @@ func Test_isPrimaryServiceUpdatedWithIP(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := newServiceWithAnnotations(tt.annotations, tt.labels)
-			got := isPrimaryServiceUpdatedWithIP(svc, tt.lbAddress, tt.ip, tt.resolvedIface)
+			lb := &lbv1.LoadBalancer{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						pkgctllb.AnnotationKeyNetwork: tt.lbNetwork,
+					},
+				},
+				Status: lbv1.LoadBalancerStatus{
+					Address: tt.lbAddress,
+				},
+			}
+			got := isPrimaryServiceUpdatedWithIP(svc, lb, tt.ip, tt.resolvedIface)
 			if got != tt.want {
 				t.Errorf("isPrimaryServiceUpdatedWithIP() = %v, want %v", got, tt.want)
 			}
@@ -407,7 +424,8 @@ func Test_isSecondaryServiceUpdatedWithPrimary(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := newServiceWithAnnotations(tt.annotations, tt.labels)
-			got := isSecondaryServiceUpdatedWithPrimary(svc, ip, labelValue)
+			primary := newServiceWithAnnotations(nil, nil)
+			got := isSecondaryServiceUpdatedWithPrimary(primary, svc, ip, labelValue)
 			if got != tt.want {
 				t.Errorf("isSecondaryServiceUpdatedWithPrimary() = %v, want %v", got, tt.want)
 			}
