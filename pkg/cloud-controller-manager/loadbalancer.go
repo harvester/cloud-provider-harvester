@@ -467,7 +467,7 @@ func (l *LoadBalancerManager) updatePrimaryServiceLoadBalancerIP(lbName string, 
 
 func isSecondaryServiceUpdatedWithPrimary(primary, secondary *v1.Service, ip, labelValue string) bool {
 
-	// old dhcp svc doesn't have network annotation.
+	// old svc doesn't have network annotation.
 	if hasNetworkAnnotation(primary) {
 		// the network from secondary should be same as primary, we don't allow users to change network annotation in svc
 		if secondary.Annotations[utils.KeyNetwork] != primary.Annotations[utils.KeyNetwork] {
@@ -501,7 +501,7 @@ func (l *LoadBalancerManager) updateSecondaryServiceLoadBalancerIP(ip string, pr
 		// update the annotations and kube-vip will update the service status load balancer
 		secondaryCopy.Annotations[utils.KeyKubevipLoadBalancerIP] = ip
 
-		// old dhcp svc doesn't have network annotation.
+		// old svc doesn't have network annotation.
 		if hasNetworkAnnotation(primary) {
 			secondaryCopy.Annotations[utils.KeyNetwork] = primary.Annotations[utils.KeyNetwork]
 		}
@@ -543,7 +543,7 @@ func (l *LoadBalancerManager) checkNetworkChanged(svc *v1.Service, lbName string
 	// // Don't allow users to change network annotation in svc for existed load balancer.
 	if IsNetworkChanged(svc, lb) {
 		return fmt.Errorf("network annotation of service %s/%s is not same as the load balancer %s/%s, service: '%s', lb: '%s'",
-			svc.Namespace, svc.Name, lb.Namespace, lb.Name, svc.Annotations[utils.KeyNetwork], lb.Annotations[pkgctllb.AnnotationKeyNetwork])
+			svc.Namespace, svc.Name, lb.Namespace, lb.Name, svc.Annotations[utils.KeyNetwork], lb.Annotations[utils.AnnotationKeyNetworkOnLB])
 	}
 
 	return nil
