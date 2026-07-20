@@ -190,7 +190,7 @@ require (
 	k8s.io/utils v0.0.0-20250820121507-0af2bda4dd1d // indirect
 	kubevirt.io/containerized-data-importer-api v1.64.0 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.2.4 // indirect
-	kubevirt.io/kubevirt v1.7.0 // indirect
+	kubevirt.io/kubevirt v1.7.4 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.32.1 // indirect
 	sigs.k8s.io/controller-runtime v0.21.0 // indirect
 	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
