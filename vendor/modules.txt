@@ -440,7 +440,6 @@ github.com/rancher/rke/types
 ## explicit; go 1.19
 github.com/rancher/wrangler/pkg/apply
 github.com/rancher/wrangler/pkg/apply/injectors
-github.com/rancher/wrangler/pkg/cleanup
 github.com/rancher/wrangler/pkg/condition
 github.com/rancher/wrangler/pkg/data
 github.com/rancher/wrangler/pkg/data/convert
