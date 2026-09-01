@@ -19,9 +19,9 @@ limitations under the License.
 package fake
 
 import (
-	clientset "github.com/harvester/cloud-provider-harvester/pkg/generated/clientset/versioned"
-	kubevirtv1 "github.com/harvester/cloud-provider-harvester/pkg/generated/clientset/versioned/typed/kubevirt.io/v1"
-	fakekubevirtv1 "github.com/harvester/cloud-provider-harvester/pkg/generated/clientset/versioned/typed/kubevirt.io/v1/fake"
+	clientset "github.com/harvester/harvester-cloud-provider/pkg/generated/clientset/versioned"
+	kubevirtv1 "github.com/harvester/harvester-cloud-provider/pkg/generated/clientset/versioned/typed/kubevirt.io/v1"
+	fakekubevirtv1 "github.com/harvester/harvester-cloud-provider/pkg/generated/clientset/versioned/typed/kubevirt.io/v1/fake"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"

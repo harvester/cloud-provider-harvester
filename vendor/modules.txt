@@ -17,50 +17,12 @@ github.com/beorn7/perks/quantile
 # github.com/blang/semver/v4 v4.0.0
 ## explicit; go 1.14
 github.com/blang/semver/v4
-# github.com/c9s/goprocinfo v0.0.0-20210130143923-c95fcf8c64a8
-## explicit
-github.com/c9s/goprocinfo/linux
 # github.com/cenkalti/backoff/v5 v5.0.2
 ## explicit; go 1.23
 github.com/cenkalti/backoff/v5
 # github.com/cespare/xxhash/v2 v2.3.0
 ## explicit; go 1.11
 github.com/cespare/xxhash/v2
-# github.com/cockroachdb/errors v1.12.0
-## explicit; go 1.23.0
-github.com/cockroachdb/errors
-github.com/cockroachdb/errors/assert
-github.com/cockroachdb/errors/barriers
-github.com/cockroachdb/errors/contexttags
-github.com/cockroachdb/errors/domains
-github.com/cockroachdb/errors/errbase
-github.com/cockroachdb/errors/errorspb
-github.com/cockroachdb/errors/errutil
-github.com/cockroachdb/errors/hintdetail
-github.com/cockroachdb/errors/issuelink
-github.com/cockroachdb/errors/join
-github.com/cockroachdb/errors/markers
-github.com/cockroachdb/errors/report
-github.com/cockroachdb/errors/safedetails
-github.com/cockroachdb/errors/secondary
-github.com/cockroachdb/errors/stdstrings
-github.com/cockroachdb/errors/telemetrykeys
-github.com/cockroachdb/errors/withstack
-# github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b
-## explicit; go 1.16
-github.com/cockroachdb/logtags
-# github.com/cockroachdb/redact v1.1.5
-## explicit; go 1.14
-github.com/cockroachdb/redact
-github.com/cockroachdb/redact/builder
-github.com/cockroachdb/redact/interfaces
-github.com/cockroachdb/redact/internal/buffer
-github.com/cockroachdb/redact/internal/escape
-github.com/cockroachdb/redact/internal/fmtforward
-github.com/cockroachdb/redact/internal/markers
-github.com/cockroachdb/redact/internal/redact
-github.com/cockroachdb/redact/internal/rfmt
-github.com/cockroachdb/redact/internal/rfmt/fmtsort
 # github.com/containernetworking/cni v1.3.0
 ## explicit; go 1.21
 github.com/containernetworking/cni/pkg/types
@@ -109,14 +71,6 @@ github.com/fsnotify/fsnotify/internal
 # github.com/fxamacker/cbor/v2 v2.9.0
 ## explicit; go 1.20
 github.com/fxamacker/cbor/v2
-# github.com/getsentry/sentry-go v0.27.0
-## explicit; go 1.18
-github.com/getsentry/sentry-go
-github.com/getsentry/sentry-go/internal/debug
-github.com/getsentry/sentry-go/internal/otel/baggage
-github.com/getsentry/sentry-go/internal/otel/baggage/internal/baggage
-github.com/getsentry/sentry-go/internal/ratelimit
-github.com/getsentry/sentry-go/internal/traceparser
 # github.com/ghodss/yaml v1.0.0
 ## explicit
 github.com/ghodss/yaml
@@ -133,10 +87,6 @@ github.com/go-logr/logr/funcr
 # github.com/go-logr/stdr v1.2.2
 ## explicit; go 1.16
 github.com/go-logr/stdr
-# github.com/go-ole/go-ole v1.3.0
-## explicit; go 1.12
-github.com/go-ole/go-ole
-github.com/go-ole/go-ole/oleutil
 # github.com/go-openapi/jsonpointer v0.21.1
 ## explicit; go 1.20
 github.com/go-openapi/jsonpointer
@@ -153,7 +103,6 @@ github.com/gogo/protobuf/gogoproto
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/protoc-gen-gogo/descriptor
 github.com/gogo/protobuf/sortkeys
-github.com/gogo/protobuf/types
 # github.com/golang/protobuf v1.5.4
 ## explicit; go 1.17
 github.com/golang/protobuf/proto
@@ -203,9 +152,6 @@ github.com/google/go-cmp/cmp/internal/value
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
-# github.com/gorilla/handlers v1.5.2
-## explicit; go 1.20
-github.com/gorilla/handlers
 # github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 ## explicit; go 1.20
 github.com/gorilla/websocket
@@ -217,23 +163,6 @@ github.com/grpc-ecosystem/go-grpc-prometheus
 github.com/grpc-ecosystem/grpc-gateway/v2/internal/httprule
 github.com/grpc-ecosystem/grpc-gateway/v2/runtime
 github.com/grpc-ecosystem/grpc-gateway/v2/utilities
-# github.com/harvester/go-common v0.0.0-20260119194217-0f17176ce67e
-## explicit; go 1.25
-github.com/harvester/go-common/ds
-# github.com/harvester/harvester v1.8.0
-## explicit; go 1.25.7
-github.com/harvester/harvester/pkg/apis/harvesterhci.io
-github.com/harvester/harvester/pkg/apis/harvesterhci.io/v1beta1
-github.com/harvester/harvester/pkg/builder
-github.com/harvester/harvester/pkg/generated/controllers/harvesterhci.io/v1beta1
-github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io
-github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1
-github.com/harvester/harvester/pkg/generated/controllers/longhorn.io/v1beta2
-github.com/harvester/harvester/pkg/ref
-github.com/harvester/harvester/pkg/settings
-github.com/harvester/harvester/pkg/util
-github.com/harvester/harvester/pkg/util/network
-github.com/harvester/harvester/pkg/util/supportbundle
 # github.com/harvester/harvester-load-balancer v1.8.0
 ## explicit; go 1.25.7
 github.com/harvester/harvester-load-balancer/pkg/apis/loadbalancer.harvesterhci.io
@@ -271,54 +200,17 @@ github.com/json-iterator/go
 ## explicit; go 1.21
 github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io
 github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1
-# github.com/kr/pretty v0.3.1
-## explicit; go 1.12
-github.com/kr/pretty
-# github.com/kr/text v0.2.0
-## explicit
-github.com/kr/text
 # github.com/kubernetes-csi/external-snapshotter/client/v4 v4.2.0
 ## explicit; go 1.15
 github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1
 # github.com/kylelemons/godebug v1.1.0
 ## explicit; go 1.11
 github.com/kylelemons/godebug/diff
-# github.com/longhorn/go-common-libs v0.0.0-20250921030719-16313e7f30b3
-## explicit; go 1.24.0
-github.com/longhorn/go-common-libs/exec
-github.com/longhorn/go-common-libs/io
-github.com/longhorn/go-common-libs/ns
-github.com/longhorn/go-common-libs/proc
-github.com/longhorn/go-common-libs/sync
-github.com/longhorn/go-common-libs/sys
-github.com/longhorn/go-common-libs/types
-github.com/longhorn/go-common-libs/utils
-# github.com/longhorn/longhorn-manager v1.10.0
-## explicit; go 1.24.0
-github.com/longhorn/longhorn-manager/csi/crypto
-github.com/longhorn/longhorn-manager/datastore
-github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn
-github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2
-github.com/longhorn/longhorn-manager/k8s/pkg/client/applyconfiguration/longhorn/v1beta2
-github.com/longhorn/longhorn-manager/k8s/pkg/client/clientset/versioned
-github.com/longhorn/longhorn-manager/k8s/pkg/client/clientset/versioned/scheme
-github.com/longhorn/longhorn-manager/k8s/pkg/client/clientset/versioned/typed/longhorn/v1beta2
-github.com/longhorn/longhorn-manager/k8s/pkg/client/informers/externalversions
-github.com/longhorn/longhorn-manager/k8s/pkg/client/informers/externalversions/internalinterfaces
-github.com/longhorn/longhorn-manager/k8s/pkg/client/informers/externalversions/longhorn
-github.com/longhorn/longhorn-manager/k8s/pkg/client/informers/externalversions/longhorn/v1beta2
-github.com/longhorn/longhorn-manager/k8s/pkg/client/listers/longhorn/v1beta2
-github.com/longhorn/longhorn-manager/meta
-github.com/longhorn/longhorn-manager/types
-github.com/longhorn/longhorn-manager/util
 # github.com/mailru/easyjson v0.9.0
 ## explicit; go 1.20
 github.com/mailru/easyjson/buffer
 github.com/mailru/easyjson/jlexer
 github.com/mailru/easyjson/jwriter
-# github.com/mitchellh/go-ps v1.0.0
-## explicit; go 1.13
-github.com/mitchellh/go-ps
 # github.com/moby/term v0.5.0
 ## explicit; go 1.18
 github.com/moby/term
@@ -332,19 +224,10 @@ github.com/modern-go/reflect2
 # github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 ## explicit
 github.com/munnerz/goautoneg
+# github.com/onsi/ginkgo/v2 v2.28.0
+## explicit; go 1.23.0
 # github.com/onsi/gomega v1.39.1
 ## explicit; go 1.24.0
-github.com/onsi/gomega
-github.com/onsi/gomega/format
-github.com/onsi/gomega/internal
-github.com/onsi/gomega/internal/gutil
-github.com/onsi/gomega/matchers
-github.com/onsi/gomega/matchers/internal/miter
-github.com/onsi/gomega/matchers/support/goraph/bipartitegraph
-github.com/onsi/gomega/matchers/support/goraph/edge
-github.com/onsi/gomega/matchers/support/goraph/node
-github.com/onsi/gomega/matchers/support/goraph/util
-github.com/onsi/gomega/types
 # github.com/openshift/api v0.0.0 => github.com/openshift/api v0.0.0-20191219222812-2987a591a72c
 ## explicit
 github.com/openshift/api/route/v1
@@ -361,9 +244,6 @@ github.com/openshift/custom-resource-status/conditions/v1
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55
-## explicit; go 1.14
-github.com/power-devops/perfstat
 # github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.82.0
 ## explicit; go 1.24
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring
@@ -436,22 +316,6 @@ github.com/rancher/rancher/pkg/apis/management.cattle.io/v3
 # github.com/rancher/rke v1.8.5
 ## explicit; go 1.23.0
 github.com/rancher/rke/types
-# github.com/rancher/wrangler v1.1.2
-## explicit; go 1.19
-github.com/rancher/wrangler/pkg/apply
-github.com/rancher/wrangler/pkg/apply/injectors
-github.com/rancher/wrangler/pkg/condition
-github.com/rancher/wrangler/pkg/data
-github.com/rancher/wrangler/pkg/data/convert
-github.com/rancher/wrangler/pkg/generic
-github.com/rancher/wrangler/pkg/gvk
-github.com/rancher/wrangler/pkg/kv
-github.com/rancher/wrangler/pkg/merr
-github.com/rancher/wrangler/pkg/name
-github.com/rancher/wrangler/pkg/objectset
-github.com/rancher/wrangler/pkg/patch
-github.com/rancher/wrangler/pkg/schemes
-github.com/rancher/wrangler/pkg/stringset
 # github.com/rancher/wrangler/v3 v3.2.4
 ## explicit; go 1.24.0
 github.com/rancher/wrangler/v3/pkg/apply
@@ -466,7 +330,6 @@ github.com/rancher/wrangler/v3/pkg/generated/controllers/apiextensions.k8s.io
 github.com/rancher/wrangler/v3/pkg/generated/controllers/apiextensions.k8s.io/v1
 github.com/rancher/wrangler/v3/pkg/generated/controllers/core
 github.com/rancher/wrangler/v3/pkg/generated/controllers/core/v1
-github.com/rancher/wrangler/v3/pkg/generated/controllers/storage/v1
 github.com/rancher/wrangler/v3/pkg/generic
 github.com/rancher/wrangler/v3/pkg/genericcondition
 github.com/rancher/wrangler/v3/pkg/gvk
@@ -478,26 +341,11 @@ github.com/rancher/wrangler/v3/pkg/objectset
 github.com/rancher/wrangler/v3/pkg/patch
 github.com/rancher/wrangler/v3/pkg/schemes
 github.com/rancher/wrangler/v3/pkg/signals
-github.com/rancher/wrangler/v3/pkg/slice
 github.com/rancher/wrangler/v3/pkg/start
 github.com/rancher/wrangler/v3/pkg/stringset
-# github.com/robfig/cron v1.2.0
-## explicit
-github.com/robfig/cron
-# github.com/rogpeppe/go-internal v1.14.1
-## explicit; go 1.23
-github.com/rogpeppe/go-internal/fmtsort
 # github.com/safchain/ethtool v0.6.2
 ## explicit; go 1.23.0
 github.com/safchain/ethtool
-# github.com/shirou/gopsutil/v3 v3.24.5
-## explicit; go 1.18
-github.com/shirou/gopsutil/v3/common
-github.com/shirou/gopsutil/v3/disk
-github.com/shirou/gopsutil/v3/internal/common
-# github.com/shopspring/decimal v1.4.0
-## explicit; go 1.10
-github.com/shopspring/decimal
 # github.com/sirupsen/logrus v1.9.4
 ## explicit; go 1.17
 github.com/sirupsen/logrus
@@ -521,9 +369,6 @@ github.com/vishvananda/netns
 # github.com/x448/float16 v0.8.4
 ## explicit; go 1.11
 github.com/x448/float16
-# github.com/yusufpapurcu/wmi v1.2.4
-## explicit; go 1.16
-github.com/yusufpapurcu/wmi
 # go.etcd.io/etcd/api/v3 v3.5.21
 ## explicit; go 1.23.0
 go.etcd.io/etcd/api/v3/authpb
@@ -646,21 +491,15 @@ go.yaml.in/yaml/v2
 go.yaml.in/yaml/v3
 # golang.org/x/crypto v0.55.0
 ## explicit; go 1.25.0
-golang.org/x/crypto/blowfish
-golang.org/x/crypto/chacha20
 golang.org/x/crypto/cryptobyte
 golang.org/x/crypto/cryptobyte/asn1
-golang.org/x/crypto/curve25519
 golang.org/x/crypto/hkdf
 golang.org/x/crypto/internal/alias
 golang.org/x/crypto/internal/poly1305
 golang.org/x/crypto/nacl/secretbox
 golang.org/x/crypto/salsa20/salsa
-golang.org/x/crypto/ssh
-golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
 # golang.org/x/exp v0.0.0-20250911091902-df9299821621
 ## explicit; go 1.24.0
-golang.org/x/exp/constraints
 golang.org/x/exp/slices
 # golang.org/x/mod v0.38.0
 ## explicit; go 1.25.0
@@ -670,9 +509,6 @@ golang.org/x/mod/semver
 # golang.org/x/net v0.57.0
 ## explicit; go 1.25.0
 golang.org/x/net/context
-golang.org/x/net/html
-golang.org/x/net/html/atom
-golang.org/x/net/html/charset
 golang.org/x/net/http/httpguts
 golang.org/x/net/http2
 golang.org/x/net/http2/hpack
@@ -695,7 +531,6 @@ golang.org/x/sync/singleflight
 # golang.org/x/sys v0.47.0
 ## explicit; go 1.25.0
 golang.org/x/sys/cpu
-golang.org/x/sys/execabs
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
@@ -706,16 +541,6 @@ golang.org/x/term
 # golang.org/x/text v0.41.0
 ## explicit; go 1.25.0
 golang.org/x/text/cases
-golang.org/x/text/encoding
-golang.org/x/text/encoding/charmap
-golang.org/x/text/encoding/htmlindex
-golang.org/x/text/encoding/internal
-golang.org/x/text/encoding/internal/identifier
-golang.org/x/text/encoding/japanese
-golang.org/x/text/encoding/korean
-golang.org/x/text/encoding/simplifiedchinese
-golang.org/x/text/encoding/traditionalchinese
-golang.org/x/text/encoding/unicode
 golang.org/x/text/feature/plural
 golang.org/x/text/internal
 golang.org/x/text/internal/catmsg
@@ -725,11 +550,9 @@ golang.org/x/text/internal/language/compact
 golang.org/x/text/internal/number
 golang.org/x/text/internal/stringset
 golang.org/x/text/internal/tag
-golang.org/x/text/internal/utf8internal
 golang.org/x/text/language
 golang.org/x/text/message
 golang.org/x/text/message/catalog
-golang.org/x/text/runes
 golang.org/x/text/secure/bidirule
 golang.org/x/text/transform
 golang.org/x/text/unicode/bidi
@@ -1522,7 +1345,6 @@ k8s.io/client-go/testing
 k8s.io/client-go/tools/auth
 k8s.io/client-go/tools/cache
 k8s.io/client-go/tools/cache/synctrack
-k8s.io/client-go/tools/cache/testing
 k8s.io/client-go/tools/clientcmd
 k8s.io/client-go/tools/clientcmd/api
 k8s.io/client-go/tools/clientcmd/api/latest
@@ -1536,12 +1358,9 @@ k8s.io/client-go/tools/pager
 k8s.io/client-go/tools/record
 k8s.io/client-go/tools/record/util
 k8s.io/client-go/tools/reference
-k8s.io/client-go/tools/watch
 k8s.io/client-go/transport
 k8s.io/client-go/util/apply
 k8s.io/client-go/util/cert
-k8s.io/client-go/util/certificate
-k8s.io/client-go/util/certificate/csr
 k8s.io/client-go/util/connrotation
 k8s.io/client-go/util/consistencydetector
 k8s.io/client-go/util/flowcontrol
@@ -1669,15 +1488,6 @@ k8s.io/kms/apis/v1beta1
 k8s.io/kms/apis/v2
 k8s.io/kms/pkg/service
 k8s.io/kms/pkg/util
-# k8s.io/kube-aggregator v0.33.1
-## explicit; go 1.24.0
-k8s.io/kube-aggregator/pkg/apis/apiregistration
-k8s.io/kube-aggregator/pkg/apis/apiregistration/v1
-k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1
-k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset
-k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/scheme
-k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/typed/apiregistration/v1
-k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/typed/apiregistration/v1beta1
 # k8s.io/kube-openapi v0.32.8 => k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff
 ## explicit; go 1.21
 k8s.io/kube-openapi/cmd/openapi-gen/args
@@ -1766,7 +1576,6 @@ kubevirt.io/client-go/log
 kubevirt.io/client-go/networkattachmentdefinitionclient
 kubevirt.io/client-go/networkattachmentdefinitionclient/scheme
 kubevirt.io/client-go/networkattachmentdefinitionclient/typed/k8s.cni.cncf.io/v1
-kubevirt.io/client-go/precond
 kubevirt.io/client-go/prometheusoperator
 kubevirt.io/client-go/prometheusoperator/scheme
 kubevirt.io/client-go/prometheusoperator/typed/monitoring/v1
@@ -1782,35 +1591,12 @@ kubevirt.io/containerized-data-importer-api/pkg/apis/upload/v1beta1
 # kubevirt.io/controller-lifecycle-operator-sdk/api v0.2.4
 ## explicit; go 1.17
 kubevirt.io/controller-lifecycle-operator-sdk/api
-# kubevirt.io/kubevirt v1.7.4
-## explicit; go 1.24.0
-kubevirt.io/kubevirt/pkg/apimachinery/patch
-kubevirt.io/kubevirt/pkg/certificates/bootstrap
-kubevirt.io/kubevirt/pkg/certificates/triple
-kubevirt.io/kubevirt/pkg/certificates/triple/cert
-kubevirt.io/kubevirt/pkg/controller
-kubevirt.io/kubevirt/pkg/pointer
-kubevirt.io/kubevirt/pkg/storage/reservation
-kubevirt.io/kubevirt/pkg/testutils
-kubevirt.io/kubevirt/pkg/util
-kubevirt.io/kubevirt/pkg/virt-config
-kubevirt.io/kubevirt/pkg/virt-config/featuregate
-kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api
-kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api/arch-defaulter
-kubevirt.io/kubevirt/pkg/virt-operator/resource/generate/components
-kubevirt.io/kubevirt/pkg/virt-operator/resource/placement
-kubevirt.io/kubevirt/pkg/virt-operator/util
 # sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.32.1
 ## explicit; go 1.21
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/controller-runtime v0.21.0
-## explicit; go 1.24.0
-sigs.k8s.io/controller-runtime/pkg/controller/priorityqueue
-sigs.k8s.io/controller-runtime/pkg/internal/metrics
-sigs.k8s.io/controller-runtime/pkg/metrics
 # sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8
 ## explicit; go 1.23
 sigs.k8s.io/json

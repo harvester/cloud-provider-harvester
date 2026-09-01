@@ -19,7 +19,7 @@ limitations under the License.
 package fake
 
 import (
-	kubevirtiov1 "github.com/harvester/cloud-provider-harvester/pkg/generated/clientset/versioned/typed/kubevirt.io/v1"
+	kubevirtiov1 "github.com/harvester/harvester-cloud-provider/pkg/generated/clientset/versioned/typed/kubevirt.io/v1"
 	gentype "k8s.io/client-go/gentype"
 	v1 "kubevirt.io/api/core/v1"
 )
