@@ -44,6 +44,16 @@ RUN --mount=type=cache,target=/go/pkg/mod,id=harvester-go-mod-${MK_REPO_ID} \
     --mount=type=cache,target=/go/src/github.com/harvester/harvester-cloud-provider/.cache/go-build,id=harvester-go-build-${MK_REPO_ID} \
     ./scripts/validate
 
+# ---- generate ----
+FROM base AS generate
+ARG MK_REPO_ID
+RUN --mount=type=cache,target=/go/pkg/mod,id=harvester-go-mod-${MK_REPO_ID} \
+    --mount=type=cache,target=/go/src/github.com/harvester/harvester-cloud-provider/.cache/go-build,id=harvester-go-build-${MK_REPO_ID} \
+    ./scripts/generate
+
+# ---- generate-output ----
+FROM scratch AS generate-output
+COPY --from=generate /go/src/github.com/harvester/harvester-cloud-provider/pkg/ /pkg/
 
 # ---- test ----
 FROM base AS test

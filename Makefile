@@ -108,6 +108,11 @@ package: build
 	$(BANNER)
 	$(ROOT)/scripts/package
 
+# ---- generate ----
+generate: gen-version-env
+	$(BANNER)
+	$(DOCKER_BUILD) --target generate-output \
+	    --output type=local,dest=$(ROOT)
 
 clean-all:
 	$(BANNER)
