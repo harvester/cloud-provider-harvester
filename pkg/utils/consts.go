@@ -12,6 +12,10 @@ const (
 	KeyNamespace      = HarvesterCloudProviderPrefix + "namespace"
 	KeyPrimaryService = HarvesterCloudProviderPrefix + "primary-service"
 
+	// To decouple with harvester/harvester, define those two consts directly
+	HarvesterLabelKeyVirtualMachineCreator   = "harvesterhci.io/creator"
+	HarvesterVirtualMachineCreatorNodeDriver = "docker-machine-driver-harvester"
+
 	KeyKubevipLoadBalancerIP = "kube-vip.io/loadbalancerIPs"
 
 	// KeyKubevipServiceInterface is the annotation key for kube-vip service interface.

@@ -7,10 +7,8 @@ import (
 	"sync"
 
 	cfg "github.com/harvester/harvester-cloud-provider/pkg/config"
+	ctlv1 "github.com/harvester/harvester-cloud-provider/pkg/generated/controllers/kubevirt.io/v1"
 	utils "github.com/harvester/harvester-cloud-provider/pkg/utils"
-	"github.com/harvester/harvester/pkg/builder"
-	ctlv1 "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io/v1"
-	harvesterutil "github.com/harvester/harvester/pkg/util"
 	ctlcorev1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/core/v1"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
@@ -88,7 +86,7 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 		return vmi, nil
 	}
 
-	if creator := vmi.Labels[builder.LabelKeyVirtualMachineCreator]; creator != harvesterutil.VirtualMachineCreatorNodeDriver {
+	if creator := vmi.Labels[utils.HarvesterLabelKeyVirtualMachineCreator]; creator != utils.HarvesterVirtualMachineCreatorNodeDriver {
 		logrus.WithFields(logrus.Fields{
 			"namespace": vmi.Namespace,
 			"name":      vmi.Name,

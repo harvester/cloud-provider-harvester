@@ -21,7 +21,7 @@ package v1
 import (
 	http "net/http"
 
-	scheme "github.com/harvester/cloud-provider-harvester/pkg/generated/clientset/versioned/scheme"
+	scheme "github.com/harvester/harvester-cloud-provider/pkg/generated/clientset/versioned/scheme"
 	rest "k8s.io/client-go/rest"
 	corev1 "kubevirt.io/api/core/v1"
 )

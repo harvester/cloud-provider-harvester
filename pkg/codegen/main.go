@@ -12,7 +12,7 @@ import (
 func main() {
 	os.Unsetenv("GOPATH")
 	controllergen.Run(args.Options{
-		OutputPackage: "github.com/harvester/cloud-provider-harvester/pkg/generated",
+		OutputPackage: "github.com/harvester/harvester-cloud-provider/pkg/generated",
 		Boilerplate:   "hack/boilerplate.go.txt",
 		Groups: map[string]args.Group{
 			kubevirtv1.SchemeGroupVersion.Group: {

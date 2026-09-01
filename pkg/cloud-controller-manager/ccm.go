@@ -9,8 +9,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	ctlkubevirt "github.com/harvester/harvester-cloud-provider/pkg/generated/controllers/kubevirt.io"
 	ctllb "github.com/harvester/harvester-load-balancer/pkg/generated/controllers/loadbalancer.harvesterhci.io"
-	ctlkubevirt "github.com/harvester/harvester/pkg/generated/controllers/kubevirt.io"
 	ctlcore "github.com/rancher/wrangler/v3/pkg/generated/controllers/core"
 	"github.com/rancher/wrangler/v3/pkg/kubeconfig"
 	"github.com/rancher/wrangler/v3/pkg/signals"

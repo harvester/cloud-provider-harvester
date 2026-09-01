@@ -22,7 +22,7 @@ import (
 	fmt "fmt"
 	http "net/http"
 
-	kubevirtv1 "github.com/harvester/cloud-provider-harvester/pkg/generated/clientset/versioned/typed/kubevirt.io/v1"
+	kubevirtv1 "github.com/harvester/harvester-cloud-provider/pkg/generated/clientset/versioned/typed/kubevirt.io/v1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
