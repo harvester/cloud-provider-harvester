@@ -31,16 +31,29 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
     DIRTY="-dirty"
 fi
 
-COMMIT=$(git -C "${TOP_DIR}" rev-parse --short=8 HEAD)
+COMMIT=$(git -C "${TOP_DIR}" rev-parse --short=8 HEAD 2>/dev/null || echo "00000000")
+COMMIT_FULL=$(git -C "${TOP_DIR}" rev-parse HEAD 2>/dev/null || echo "${COMMIT}")
 COMMIT_BRANCH=$(git -C "${TOP_DIR}" rev-parse --abbrev-ref HEAD)
 COMMIT_BRANCH_FORMATTED=$(echo "${COMMIT_BRANCH}" | sed -E 's/[^a-zA-Z0-9.]+/-/g')
-GIT_TAG=$(git -C "${TOP_DIR}" tag -l --contains HEAD | head -n 1)
+
+# Prefer GIT_TAG from environment if set (e.g. GitHub Workflow or Make),
+# otherwise resolve from live git repository.
+# TAG is primarily used as an image tag and may include arch suffixes, so don't use it as a git tag fallback.
+if [[ -n "${GIT_TAG}" ]]; then
+    echo "Info: using GIT_TAG from environment: ${GIT_TAG}"
+else
+    GIT_TAG="$(git -C "${TOP_DIR}" tag -l --contains HEAD 2>/dev/null | head -n 1)"
+fi
+
 if [[ "$GIT_TAG" == *"-dev-"* ]]; then
     SPRINT_RELEASE="-dev-"
 fi
 
-if [[ -z "$DIRTY" && -n "$GIT_TAG" && -z "$SPRINT_RELEASE" ]]; then
-    VERSION=$GIT_TAG
+# Use explicit VERSION from environment if provided, otherwise deduce from GIT_TAG or COMMIT
+if [[ -n "${VERSION}" ]]; then
+    echo "Info: using explicit VERSION override from environment: ${VERSION}"
+elif [[ -z "$DIRTY" && -n "${GIT_TAG}" && -z "$SPRINT_RELEASE" ]]; then
+    VERSION="${GIT_TAG}"
  else
     VERSION="${COMMIT}${DIRTY}"
 fi
@@ -67,6 +80,7 @@ cat > "${_VERSION_ENV}" <<__EOF__
 ARCH="${ARCH}"
 DIRTY="${DIRTY}"
 COMMIT="${COMMIT}"
+COMMIT_FULL="${COMMIT_FULL}"
 COMMIT_BRANCH="${COMMIT_BRANCH}"
 COMMIT_BRANCH_FORMATTED="${COMMIT_BRANCH_FORMATTED}"
 GIT_TAG="${GIT_TAG}"
