@@ -8,6 +8,50 @@ cd $(dirname $0)/..
 mkdir -p bin
 [ "$(uname)" != "Darwin" ] && LINKFLAGS="-extldflags -static -s"
 
+# version info for `func Get() apimachineryversion.Info `
+PKG="k8s.io/component-base/version"
+
+# Deduce gitTreeState strictly from DIRTY set by scripts/version
+if [ -n "${DIRTY}" ]; then
+    GIT_TREE_STATE="dirty"
+else
+    GIT_TREE_STATE="clean"
+fi
+
+# Format GIT_VERSION to satisfy k8s semver requirements
+GIT_VERSION="${VERSION:-v0.0.0-unknown}"
+if [[ ! "${GIT_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+    GIT_VERSION="v0.0.0-${GIT_VERSION}"
+fi
+
+# Fall back buildDate to current UTC time; use epoch if the date tool is unavailable
+BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo "1970-01-01T00:00:00Z")
+
+# Full SHA for gitCommit
+GIT_COMMIT="${COMMIT_FULL:-${COMMIT:-00000000}}"
+# Extract Major and Minor version numbers
+GIT_MAJOR="0"
+GIT_MINOR="0"
+if [[ "${GIT_VERSION}" =~ ^v([0-9]+)\.([0-9]+) ]]; then
+    GIT_MAJOR="${BASH_REMATCH[1]}"
+    GIT_MINOR="${BASH_REMATCH[2]}"
+fi
+
+# Construct version ldflags
+LDFLAGS_VERSION=(
+    "-X ${PKG}.gitVersion=${GIT_VERSION}"
+    "-X ${PKG}.gitCommit=${GIT_COMMIT}"
+    "-X ${PKG}.gitTreeState=${GIT_TREE_STATE}"
+    "-X ${PKG}.buildDate=${BUILD_DATE}"
+    "-X ${PKG}.gitMajor=${GIT_MAJOR}"
+    "-X ${PKG}.gitMinor=${GIT_MINOR}"
+)
+
+ALL_LDFLAGS="${LDFLAGS_VERSION[*]} ${LINKFLAGS:-}"
+
+echo "To be injected version info:"
+echo "${LDFLAGS_VERSION[*]}"
+
 for arch in "amd64" "arm64"; do
-    GOARCH="$arch" CGO_ENABLED=0 go build -ldflags "-X main.VERSION=$VERSION $LINKFLAGS" -o bin/harvester-cloud-provider-"$arch"
+    GOARCH="$arch" CGO_ENABLED=0 go build -ldflags "${ALL_LDFLAGS}" -o bin/harvester-cloud-provider-"$arch"
 done

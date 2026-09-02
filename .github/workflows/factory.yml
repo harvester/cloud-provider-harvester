@@ -30,6 +30,11 @@ jobs:
 
     - name: Run dapper
       run: make ci
+      env:
+        # Pass the inputs down to the Makefile and scripts/version on the host
+        TAG: ${{ inputs.tag }}
+        GIT_TAG: ${{ inputs.tag }}
+        VERSION: ${{ inputs.tag }}
 
     - name: Read some Secrets
       uses: rancher-eio/read-vault-secrets@7282bf97898cd1c16c89f837e0bb442e6d384c89 # main

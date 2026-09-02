@@ -6,6 +6,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -18,6 +19,7 @@ import (
 	"k8s.io/cloud-provider/options"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
+	"k8s.io/component-base/version"
 	"k8s.io/klog/v2"
 
 	ccm "github.com/harvester/harvester-cloud-provider/pkg/cloud-controller-manager"
@@ -27,6 +29,7 @@ import (
 
 func main() {
 	utils.BootstrapLogrus()
+	printFrameworkVersion()
 
 	pflag.CommandLine.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
 
@@ -151,4 +154,16 @@ func registerHarvesterFlags(harv *pflag.FlagSet) {
 
 	harv.BoolVar(&config.ShowFullHelpOnError, utils.FlagShowFullHelpOnError, false,
 		"If a configuration error occurs at startup, the full help menu and flag list will be displayed. (default false)")
+}
+
+func printFrameworkVersion() {
+	info := version.Get()
+
+	marshaled, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		klog.Errorf("Failed to marshal framework version info: %v", err)
+		return
+	}
+
+	klog.Infof("CCM framework version:\n%s", string(marshaled))
 }

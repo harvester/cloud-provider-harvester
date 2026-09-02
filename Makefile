@@ -104,6 +104,9 @@ test: gen-version-env
 
 
 # ---- Package image ----
+# Simulate a GitHub Actions release or RC locally:
+#   TAG="v0.2.8" GIT_TAG="v0.2.8" make package
+#   TAG="v0.2.8-rc1" GIT_TAG="v0.2.8-rc1" make package
 package: build
 	$(BANNER)
 	$(ROOT)/scripts/package
@@ -121,6 +124,14 @@ clean-all:
 
 .DEFAULT_GOAL := default
 
+# Export release and version overrides to all child targets and sub-shells
+export TAG
+export GIT_TAG
+export VERSION
+
+# Simulate a GitHub Actions release or RC locally:
+#   TAG="v0.2.8" GIT_TAG="v0.2.8" make ci
+#   TAG="v0.2.8-rc1" GIT_TAG="v0.2.8-rc1" make ci
 ci: build test validate package
 
 default: build package
