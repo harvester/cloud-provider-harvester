@@ -77,9 +77,36 @@ func GetCommonVMINADs(vmis []*kubevirtv1.VirtualMachineInstance) map[string]stri
 }
 
 func IsMigrationCompleted(vmi *kubevirtv1.VirtualMachineInstance) bool {
-	return vmi.Status.MigrationState == nil || vmi.Status.MigrationState.Completed
+	return vmi != nil && (vmi.Status.MigrationState == nil || vmi.Status.MigrationState.Completed)
 }
 
 func IsRunning(vmi *kubevirtv1.VirtualMachineInstance) bool {
-	return vmi.Status.Phase == kubevirtv1.Running
+	return vmi != nil && vmi.Status.Phase == kubevirtv1.Running
+}
+
+func GetLabelGuestClusterName(vmi *kubevirtv1.VirtualMachineInstance) string {
+	if vmi == nil {
+		return ""
+	}
+	return vmi.Labels[LabelKeyGuestClusterNameOnVM]
+}
+
+// non-empty, non-default guest cluster name
+func IsNormalGuestClusterName(gcName string) bool {
+	return gcName != "" && gcName != DefaultGuestClusterName
+}
+
+// IsGuestAgentConnected returns true if the VMI has an active and connected qemu-guest-agent.
+func IsGuestAgentConnected(vmi *kubevirtv1.VirtualMachineInstance) bool {
+	if vmi == nil {
+		return false
+	}
+
+	for _, cond := range vmi.Status.Conditions {
+		if cond.Type == kubevirtv1.VirtualMachineInstanceAgentConnected {
+			return cond.Status == corev1.ConditionTrue
+		}
+	}
+
+	return false
 }

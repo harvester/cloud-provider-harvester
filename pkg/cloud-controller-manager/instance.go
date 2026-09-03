@@ -79,6 +79,17 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 }
 
 func (i *instanceManager) getVM(node *v1.Node) (*kubevirtv1.VirtualMachine, error) {
+	// Path 1: Instant O(1) cache lookup by VM UID if providerID is populated
+	if node.Spec.ProviderID != "" {
+		vmUID := strings.TrimPrefix(node.Spec.ProviderID, ProviderName+"://")
+		vms, err := i.vmCache.GetByIndex(UIDIndex, vmUID)
+		if err == nil && len(vms) > 0 {
+			return vms[0], nil
+		}
+	}
+
+	// Path 2: Bootstrap fallback (first registration before providerID is written back)
+	// Works reliably because vm.Name == node.Name in CAPI MachinePool deployments
 	nodeName := node.Name
 	if vmName, ok := i.nodeToVMName.Load(nodeName); ok {
 		nodeName = vmName.(string)
