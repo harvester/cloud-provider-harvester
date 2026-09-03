@@ -3,9 +3,20 @@ set -e
 
 cd $(dirname $0)/..
 
+# Prevent accidental imports/dependencies on harvester/harvester to reduce CVEs.
+# Do not import it directly. If generated controllers/clients are needed,
+# generate them directly in this repository instead.
+echo "Checking dependencies in go.mod"
+if grep -E 'github\.com/harvester/harvester([ /]|$)' go.mod; then
+    echo "Error: direct dependency on github.com/harvester/harvester is not allowed in go.mod" >&2
+    exit 1
+else
+    echo "PASS"
+fi
+
 if ! command -v golangci-lint; then
-    echo Skipping validation: no golangci-lint available
-    exit
+    echo "WARNING: Skipping validation: no golangci-lint available" >&2
+    exit 0
 fi
 
 echo Running validation
