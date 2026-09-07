@@ -24,7 +24,6 @@ import (
 
 func main() {
 	utils.BootstrapLogrus()
-	printFrameworkVersion()
 
 	pflag.CommandLine.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
 
@@ -73,6 +72,8 @@ func main() {
 
 	logs.InitLogs()
 	defer logs.FlushLogs()
+
+	logFrameworkVersion()
 
 	// Wrap the framework's RunE with our custom configuration sync and validation
 	originalRunE := command.RunE
@@ -151,14 +152,17 @@ func registerHarvesterFlags(harv *pflag.FlagSet) {
 		"If a configuration error occurs at startup, the full help menu and flag list will be displayed. (default false)")
 }
 
-func printFrameworkVersion() {
+// logFrameworkVersion logs the detailed version structure as a single-line JSON payload.
+// This provides full version metadata for easier debugging, whereas the CCM framework by
+// default only outputs minimal info like "controllermanager.go:160] Version: v0.0.0-63c5e714".
+func logFrameworkVersion() {
 	info := version.Get()
 
-	marshaled, err := json.MarshalIndent(info, "", "  ")
+	marshaled, err := json.Marshal(info)
 	if err != nil {
-		klog.Errorf("Failed to marshal framework version info: %v", err)
+		klog.Errorf("Failed to marshal framework version: %v", err)
 		return
 	}
 
-	klog.Infof("CCM framework version:\n%s", string(marshaled))
+	klog.Infof("CCM framework version: %s", string(marshaled))
 }
