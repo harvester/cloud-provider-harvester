@@ -21,7 +21,7 @@ func main() {
 					kubevirtv1.VirtualMachineInstance{},
 				},
 				GenerateTypes:   false,
-				GenerateClients: true,
+				GenerateClients: false, // ClientSets are not used yet, don't generate.
 			},
 		},
 	})
