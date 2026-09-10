@@ -259,7 +259,9 @@ func (h *Handler) annotateNodeWithVMIName(node *corev1.Node, vmiName string) err
 	return nil
 }
 
-// apparently, vmiName != hostName
+// annotateNodeWithVMIHostName handles custom hostname mappings where vmiName != hostName.
+// It enforces strict safety checks: if the node is already annotated with a different VMI,
+// it rejects the update to prevent accidental overwrites or conflicts (e.g., from hostname reassignments).
 func (h *Handler) annotateNodeWithVMIHostName(node *corev1.Node, vmiName string, hostName string) error {
 	if node == nil {
 		return nil
