@@ -1,7 +1,6 @@
 package virtualmachineinstance
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -14,62 +13,150 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
-func TestAnnotateNodeWithVMIHostName_Conflict(t *testing.T) {
-	nodeName := "my-node"
-	existingVMI := "vm-old"
-	newVMI := "vm-new"
+func TestAnnotateNode_WithVMIName(t *testing.T) {
+	nodeName := "example"
 
-	initialNodes := map[string]*corev1.Node{
-		nodeName: {
-			ObjectMeta: metav1.ObjectMeta{
-				Name: nodeName,
-				Annotations: map[string]string{
-					utils.AnnotationVMNameOfGuestClusterNode: existingVMI,
-				},
-			},
+	tests := []struct {
+		name        string
+		initialVMI  string
+		targetVMI   string
+		expectError bool
+	}{
+		{
+			name:        "error on conflict with different existing VMI",
+			initialVMI:  "example",
+			targetVMI:   "example-1",
+			expectError: true,
+		},
+		{
+			name:        "success when VMI annotation is already the same",
+			initialVMI:  "example",
+			targetVMI:   "example",
+			expectError: false,
+		},
+		{
+			name:        "success when no VMI annotation exists yet",
+			initialVMI:  "",
+			targetVMI:   "example",
+			expectError: false,
 		},
 	}
 
-	fakeCache := fakeclients.NewNdoeCache(initialNodes)
-	fakeClient := fakeclients.NewFakeNodeClient(fakeCache)
-	h := &Handler{
-		nodeCache:  fakeCache,
-		nodeClient: fakeClient,
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			annotations := map[string]string{}
+			if tc.initialVMI != "" {
+				annotations[utils.AnnotationVMNameOfGuestClusterNode] = tc.initialVMI
+			}
 
-	node, _ := fakeCache.Get(nodeName)
-	err := h.annotateNodeWithVMIHostName(node, newVMI, "some-hostname")
-	if err == nil {
-		t.Fatalf("expected error due to annotation conflict, got nil")
+			initialNodes := map[string]*corev1.Node{
+				nodeName: {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        nodeName,
+						Annotations: annotations,
+					},
+				},
+			}
+
+			fakeCache := fakeclients.NewNodeCache(initialNodes)
+			fakeClient := fakeclients.NewNodeClient(fakeCache)
+			h := &Handler{
+				nodeCache:  fakeCache,
+				nodeClient: fakeClient,
+			}
+
+			node, _ := fakeCache.Get(nodeName)
+			err := h.annotateNodeWithVMIName(node, tc.targetVMI)
+
+			if tc.expectError && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !tc.expectError && err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+		})
 	}
 }
 
 func TestFindNodeByVMIAnnotation(t *testing.T) {
-	targetVMI := "vm-target"
-	nodeName := "worker-node-1"
-
-	initialNodes := map[string]*corev1.Node{
-		nodeName: {
-			ObjectMeta: metav1.ObjectMeta{
-				Name: nodeName,
-				Annotations: map[string]string{
-					utils.AnnotationVMNameOfGuestClusterNode: targetVMI,
+	tests := []struct {
+		name             string
+		initialNodes     map[string]*corev1.Node
+		searchVMI        string
+		expectedNodeName string
+		expectError      bool
+	}{
+		{
+			name: "found when node has matching VMI annotation",
+			initialNodes: map[string]*corev1.Node{
+				"worker-node-1": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "worker-node-1",
+						Annotations: map[string]string{
+							utils.AnnotationVMNameOfGuestClusterNode: "vm-target",
+						},
+					},
 				},
 			},
+			searchVMI:        "vm-target",
+			expectedNodeName: "worker-node-1",
+			expectError:      false,
+		},
+		{
+			name: "not found when annotations do not match",
+			initialNodes: map[string]*corev1.Node{
+				"worker-node-1": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "worker-node-1",
+						Annotations: map[string]string{
+							utils.AnnotationVMNameOfGuestClusterNode: "vm-other",
+						},
+					},
+				},
+			},
+			searchVMI:        "vm-target",
+			expectedNodeName: "",
+			expectError:      false,
+		},
+		{
+			name:             "not found when cache is empty",
+			initialNodes:     map[string]*corev1.Node{},
+			searchVMI:        "vm-target",
+			expectedNodeName: "",
+			expectError:      false,
 		},
 	}
 
-	fakeCache := fakeclients.NewNdoeCache(initialNodes)
-	h := &Handler{
-		nodeCache: fakeCache,
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeCache := fakeclients.NewNodeCache(tc.initialNodes)
+			h := &Handler{
+				nodeCache: fakeCache,
+			}
 
-	foundNode, err := h.findNodeByVMIAnnotation(targetVMI)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if foundNode == nil || foundNode.Name != nodeName {
-		t.Fatalf("expected node %s, got %v", nodeName, foundNode)
+			foundNode, err := h.findNodeByVMIAnnotation(tc.searchVMI)
+
+			if tc.expectError {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if tc.expectedNodeName == "" {
+				if foundNode != nil {
+					t.Fatalf("expected no node, got %s", foundNode.Name)
+				}
+			} else {
+				if foundNode == nil || foundNode.Name != tc.expectedNodeName {
+					t.Fatalf("expected node %s, got %v", tc.expectedNodeName, foundNode)
+				}
+			}
+		})
 	}
 }
 
@@ -87,111 +174,264 @@ func TestCompareTopology(t *testing.T) {
 		corev1.LabelTopologyZone:   "zone-2",
 	}
 
-	if !compareTopology(a, b) {
-		t.Fatalf("expected topologies to match")
+	if topologyChanged(a, b) {
+		t.Fatalf("expected topologies no change")
 	}
-	if compareTopology(a, c) {
-		t.Fatalf("expected topologies not to match")
-	}
-}
-
-type errorNodeClient struct {
-	*fakeclients.FakeNodeClient
-	injectErrorNodeName string
-}
-
-func (e *errorNodeClient) Update(node *corev1.Node) (*corev1.Node, error) {
-	if node.Name == e.injectErrorNodeName {
-		return nil, errors.New("injected update error")
-	}
-	return e.FakeNodeClient.Update(node)
-}
-
-func TestAnnotateNodeWithVMIName_Error(t *testing.T) {
-	nodeName := "testtest"
-	vmiName := "some-vmi"
-
-	initialNodes := map[string]*corev1.Node{
-		nodeName: {
-			ObjectMeta: metav1.ObjectMeta{
-				Name: nodeName,
-			},
-		},
-	}
-
-	fakeStore := fakeclients.NewNdoeCache(initialNodes)
-	fakeClient := &errorNodeClient{
-		FakeNodeClient:      fakeclients.NewFakeNodeClient(fakeStore),
-		injectErrorNodeName: nodeName,
-	}
-
-	h := &Handler{
-		nodeClient: fakeClient,
-		nodeCache:  fakeStore,
-	}
-
-	node, _ := fakeStore.Get(nodeName)
-	err := h.annotateNodeWithVMIName(node, vmiName)
-	if err == nil {
-		t.Fatalf("expected error from annotateNodeWithVMIName, got nil")
+	if !topologyChanged(a, c) {
+		t.Fatalf("expected topologies changed")
 	}
 }
 
-func TestOnVmiChanged_AnnotateError(t *testing.T) {
+func TestOnVmiChanged(t *testing.T) {
 	namespace := "default"
-	vmiName := "testtest"
+	vmiName := "vmi-example"
 	clusterName := "test-cluster"
 
+	origClusterName := cfg.GetConfig().ClusterName
 	cfg.GetConfig().ClusterName = clusterName
+	defer func() { cfg.GetConfig().ClusterName = origClusterName }()
 
-	vmi := &kubevirtv1.VirtualMachineInstance{
+	baseVMI := &kubevirtv1.VirtualMachineInstance{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vmiName,
 			Namespace: namespace,
 			Labels: map[string]string{
 				utils.LabelKeyGuestClusterNameOnVM:           clusterName,
-				utils.HarvesterLabelKeyVirtualMachineCreator: utils.HarvesterVirtualMachineCreatorNodeDriver, // assuming creator label
+				utils.HarvesterLabelKeyVirtualMachineCreator: utils.HarvesterVirtualMachineCreatorNodeDriver,
 			},
 		},
 		Status: kubevirtv1.VirtualMachineInstanceStatus{
 			Phase: kubevirtv1.Running,
-			Conditions: []kubevirtv1.VirtualMachineInstanceCondition{
-				{
-					Type:   kubevirtv1.VirtualMachineInstanceAgentConnected,
-					Status: corev1.ConditionTrue,
+		},
+	}
+
+	tests := []struct {
+		name                  string
+		vmi                   *kubevirtv1.VirtualMachineInstance
+		initialNodes          map[string]*corev1.Node
+		expectError           bool
+		errorContains         string
+		expectedAnnotatedNode string
+	}{
+		{
+			name: "1. vmi name match node name, annotate node successfully",
+			vmi:  baseVMI,
+			initialNodes: map[string]*corev1.Node{
+				vmiName: {
+					ObjectMeta: metav1.ObjectMeta{
+						Name: vmiName,
+					},
 				},
 			},
+			expectError:           false,
+			expectedAnnotatedNode: vmiName,
+		},
+		{
+			name: "2. vmi name match node name, already annotated so return quickly",
+			vmi:  baseVMI,
+			initialNodes: map[string]*corev1.Node{
+				vmiName: {
+					ObjectMeta: metav1.ObjectMeta{
+						Name: vmiName,
+						Annotations: map[string]string{
+							utils.AnnotationVMNameOfGuestClusterNode: vmiName,
+						},
+					},
+				},
+			},
+			expectError:           false,
+			expectedAnnotatedNode: vmiName,
+		},
+		{
+			name: "3. vmi name match node name, annotation conflict falls through to agent check error",
+			vmi:  baseVMI,
+			initialNodes: map[string]*corev1.Node{
+				vmiName: {
+					ObjectMeta: metav1.ObjectMeta{
+						Name: vmiName,
+						Annotations: map[string]string{
+							utils.AnnotationVMNameOfGuestClusterNode: "other-vmi",
+						},
+					},
+				},
+			},
+			expectError:   true,
+			errorContains: "guest agent is not connected",
+		},
+		{
+			name: "4. vmi name does not match node name, agent not ready returns error",
+			vmi:  baseVMI,
+			initialNodes: map[string]*corev1.Node{
+				"unrelated-node": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "unrelated-node",
+					},
+				},
+			},
+			expectError:   true,
+			errorContains: "guest agent is not connected",
+		},
+		{
+			name: "5. vmi name does not match node name, found via node annotation",
+			vmi:  baseVMI,
+			initialNodes: map[string]*corev1.Node{
+				"some-other-node": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "some-other-node",
+						Annotations: map[string]string{
+							utils.AnnotationVMNameOfGuestClusterNode: vmiName,
+						},
+					},
+				},
+			},
+			expectError:           false,
+			expectedAnnotatedNode: "some-other-node",
 		},
 	}
 
-	initialNodes := map[string]*corev1.Node{
-		vmiName: {
-			ObjectMeta: metav1.ObjectMeta{
-				Name: vmiName,
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeCache := fakeclients.NewNodeCache(tc.initialNodes)
+			fakeClient := fakeclients.NewNodeClient(fakeCache)
+
+			h := &Handler{
+				namespace:  namespace,
+				nodeCache:  fakeCache,
+				nodeClient: fakeClient,
+			}
+
+			_, err := h.OnVmiChanged("", tc.vmi)
+
+			if tc.expectError {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if tc.errorContains != "" && !strings.Contains(err.Error(), tc.errorContains) {
+					t.Fatalf("expected error containing %q, got %q", tc.errorContains, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("expected no error, got: %v", err)
+				}
+
+				// Verify node object annotation after successful execution
+				foundNode, findErr := h.findNodeByVMIAnnotation(vmiName)
+				if findErr != nil {
+					t.Fatalf("unexpected error finding node by VMI annotation: %v", findErr)
+				}
+				if tc.expectedAnnotatedNode != "" {
+					if foundNode == nil {
+						t.Fatalf("expected node %s to be annotated with VMI %s, but found none", tc.expectedAnnotatedNode, vmiName)
+					}
+					if foundNode.Name != tc.expectedAnnotatedNode {
+						t.Fatalf("expected annotated node to be %s, got %s", tc.expectedAnnotatedNode, foundNode.Name)
+					}
+					if foundNode.Annotations[utils.AnnotationVMNameOfGuestClusterNode] != vmiName {
+						t.Fatalf("expected node annotation %s to be %s, got %s", utils.AnnotationVMNameOfGuestClusterNode, vmiName, foundNode.Annotations[utils.AnnotationVMNameOfGuestClusterNode])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestOnVmiChanged_SkipScenarios(t *testing.T) {
+	namespace := "default"
+	vmiName := "vmi-example"
+	clusterName := "test-cluster"
+
+	origClusterName := cfg.GetConfig().ClusterName
+	cfg.GetConfig().ClusterName = clusterName
+	defer func() { cfg.GetConfig().ClusterName = origClusterName }()
+
+	now := metav1.Now()
+	baseVMI := &kubevirtv1.VirtualMachineInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vmiName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				utils.LabelKeyGuestClusterNameOnVM:           clusterName,
+				utils.HarvesterLabelKeyVirtualMachineCreator: utils.HarvesterVirtualMachineCreatorNodeDriver,
 			},
 		},
+		Status: kubevirtv1.VirtualMachineInstanceStatus{
+			Phase: kubevirtv1.Running,
+		},
 	}
 
-	fakeStore := fakeclients.NewNdoeCache(initialNodes)
-	fakeClient := &errorNodeClient{
-		FakeNodeClient:      fakeclients.NewFakeNodeClient(fakeStore),
-		injectErrorNodeName: vmiName,
+	tests := []struct {
+		name string
+		vmi  *kubevirtv1.VirtualMachineInstance
+	}{
+		{
+			name: "nil VMI",
+			vmi:  nil,
+		},
+		{
+			name: "VMI with deletion timestamp",
+			vmi: func() *kubevirtv1.VirtualMachineInstance {
+				v := baseVMI.DeepCopy()
+				v.DeletionTimestamp = &now
+				return v
+			}(),
+		},
+		{
+			name: "VMI in different namespace",
+			vmi: func() *kubevirtv1.VirtualMachineInstance {
+				v := baseVMI.DeepCopy()
+				v.Namespace = "other-namespace"
+				return v
+			}(),
+		},
+		{
+			name: "VMI not running",
+			vmi: func() *kubevirtv1.VirtualMachineInstance {
+				v := baseVMI.DeepCopy()
+				v.Status.Phase = kubevirtv1.Pending
+				return v
+			}(),
+		},
+		{
+			name: "VMI migration not completed",
+			vmi: func() *kubevirtv1.VirtualMachineInstance {
+				v := baseVMI.DeepCopy()
+				v.Status.MigrationState = &kubevirtv1.VirtualMachineInstanceMigrationState{
+					Completed: false,
+				}
+				return v
+			}(),
+		},
+		{
+			name: "VMI not created by Harvester creator",
+			vmi: func() *kubevirtv1.VirtualMachineInstance {
+				v := baseVMI.DeepCopy()
+				delete(v.Labels, utils.HarvesterLabelKeyVirtualMachineCreator)
+				return v
+			}(),
+		},
+		{
+			name: "VMI missing guest cluster name label",
+			vmi: func() *kubevirtv1.VirtualMachineInstance {
+				v := baseVMI.DeepCopy()
+				delete(v.Labels, utils.LabelKeyGuestClusterNameOnVM)
+				return v
+			}(),
+		},
 	}
 
-	h := &Handler{
-		namespace:  namespace,
-		nodeCache:  fakeStore,
-		nodeClient: fakeClient,
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := &Handler{
+				namespace: namespace,
+			}
 
-	// Note: We bypass/skip faking deeper syncNodeAndVMI execution here as more
-	// complex controller dependencies (such as restClient/Lister mocks) are needed.
-	_, err := h.OnVmiChanged("", vmi)
-	if err == nil {
-		t.Fatalf("expected error when annotation update fails, got nil")
-	}
-	expectedMsg := "injected update error"
-	if err.Error() != expectedMsg && !strings.Contains(err.Error(), expectedMsg) {
-		t.Fatalf("expected error containing %q, got %q", expectedMsg, err.Error())
+			resVMI, err := h.OnVmiChanged("", tc.vmi)
+			if err != nil {
+				t.Fatalf("expected no error on skip scenario, got: %v", err)
+			}
+			if tc.vmi != nil && resVMI != tc.vmi {
+				t.Fatalf("expected returned VMI to be identical pointer on skip")
+			}
+		})
 	}
 }

@@ -25,6 +25,9 @@ type instanceManager struct {
 }
 
 func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bool, error) {
+	if node == nil {
+		return false, fmt.Errorf("node is nil")
+	}
 	if _, err := i.getVM(node); err != nil {
 		if !errors.IsNotFound(err) {
 			return false, err
@@ -35,6 +38,9 @@ func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bo
 }
 
 func (i *instanceManager) InstanceShutdown(ctx context.Context, node *v1.Node) (bool, error) {
+	if node == nil {
+		return false, fmt.Errorf("node is nil")
+	}
 	vm, err := i.getVM(node)
 	if err != nil {
 		return false, err
@@ -43,6 +49,9 @@ func (i *instanceManager) InstanceShutdown(ctx context.Context, node *v1.Node) (
 }
 
 func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (*cloudprovider.InstanceMetadata, error) {
+	if node == nil {
+		return nil, fmt.Errorf("node is nil")
+	}
 	vm, err := i.getVM(node)
 	if err != nil {
 		return nil, err
