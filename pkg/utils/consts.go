@@ -116,4 +116,8 @@ const (
 	// AnnotationAlphaProvidedIPAddr ("alpha.kubernetes.io/provided-node-ip")
 	// from "k8s.io/cloud-provider/api/well_known_annotations.go".
 	// is always respected first as a legacy override for backward compatibility.
+
+	// AnnotationVMNameOfGuestClusterNode is the annotation on guest cluster node object
+	// which is applie by harvester-cloud-provider
+	AnnotationVMNameOfGuestClusterNode = HarvesterCloudProviderPrefix + "vm-name-of-guest-cluster-node"
 )

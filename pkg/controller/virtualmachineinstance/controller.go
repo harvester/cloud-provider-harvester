@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	cfg "github.com/harvester/harvester-cloud-provider/pkg/config"
 	ctlv1 "github.com/harvester/harvester-cloud-provider/pkg/generated/controllers/kubevirt.io/v1"
@@ -36,8 +35,6 @@ type Handler struct {
 	restClient      kubernetes.Interface
 	kubevirtClient  kubecli.KubevirtClient
 
-	nodeToVMName *sync.Map
-
 	namespace string
 }
 
@@ -51,7 +48,7 @@ func Register(
 	configMaps ctlcorev1.ConfigMapController,
 	vmis ctlv1.VirtualMachineInstanceController,
 	kubevirtClient kubecli.KubevirtClient,
-	nodeToVMName *sync.Map,
+
 	namespace string,
 ) {
 	handler := &Handler{
@@ -62,7 +59,6 @@ func Register(
 		configMapClient: configMaps,
 		restClient:      restClient,
 		kubevirtClient:  kubevirtClient,
-		nodeToVMName:    nodeToVMName,
 		namespace:       namespace,
 	}
 	logrus.WithFields(logrus.Fields{
@@ -77,20 +73,19 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 		return vmi, nil
 	}
 
-	// 1. Quick Filters: Namespace, Status, Creator
+	// unrelated vmis, don't log anything
 	if vmi.Namespace != h.namespace || !utils.IsRunning(vmi) || !utils.IsMigrationCompleted(vmi) {
 		return vmi, nil
 	}
 
-	if creator := vmi.Labels[builder.LabelKeyVirtualMachineCreator]; creator != harvesterutil.VirtualMachineCreatorNodeDriver {
+	if !utils.IsVmiCreatedFromHarvesterCreator(vmi) {
 		logrus.WithFields(logrus.Fields{
 			"namespace": vmi.Namespace,
 			"name":      vmi.Name,
-		}).Debug("skip processing virtual machine instance which is not from Harvester creator")
+		}).Debug("skip processing virtual machine instance which is not created by Harvester creator")
 		return vmi, nil
 	}
 
-	// 2. Precision Filter: Guest Cluster Scope
 	gcName := utils.GetLabelGuestClusterName(vmi)
 	if gcName == "" {
 		logrus.WithFields(logrus.Fields{
@@ -100,6 +95,8 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 		return vmi, nil
 	}
 
+	// if HCP is started with an empty/default cluster name, it means the cluster-name param is not correctly passed
+	// the cluster-name check is skipped, and fallback to following check
 	savedGcName := cfg.GetConfig().ClusterName
 	if utils.IsNormalGuestClusterName(savedGcName) {
 		if gcName != savedGcName {
@@ -120,31 +117,49 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 		}).Debug("cluster-name parameter is empty or invalid in HCP config; falling back to checking VMI directly, which may be inaccurate in multi-cluster namespaces")
 	}
 
-	// 3. Fast Path A: Direct Name Match (Standard RKE2/K3s deployments)
+	// Fast Path A: Direct Name Match (Standard RKE2/K3s deployments)
+	// For standard RKE2/K3s deployments, this direct lookup is entirely sufficient.
+	// We avoid using an in-memory shared map/cache; instead, we persist the mapping
+	// directly to the guest node object annotation for reliable, persistent lookup.
 	node, err := h.nodeCache.Get(vmi.Name)
 	if err == nil {
-		if err := h.annotateNodeWithVMIName(node, vmi.Name, string(vmi.UID)); err != nil {
-			return vmi, fmt.Errorf("failed to annotate node %s: %w", node.Name, err)
+		if err := h.annotateNodeWithVMIName(node, vmi.Name); err != nil {
+			return vmi, fmt.Errorf("failed to annotate node %s which is same with vm name: %w", node.Name, err)
 		}
-		return h.syncNodeAndNAD(vmi, node)
+		return h.syncNodeAndVMI(vmi, node)
 	} else if !errors.IsNotFound(err) {
 		return vmi, err
 	}
 
-	// 4. Fast Path B: Search Node Cache for existing Annotation
+	// Fast Path B: Search Node Cache for existing Annotation
 	annotatedNode, err := h.findNodeByVMIAnnotation(vmi.Name)
 	if err != nil {
 		return vmi, err
 	}
 	if annotatedNode != nil {
-		return h.syncNodeAndNAD(vmi, annotatedNode)
+		return h.syncNodeAndVMI(vmi, annotatedNode)
 	}
 
-	// 5. Slow Path / Fallback ONLY: Query Guest Agent RPC
+	// Slow Path / Fallback ONLY: Query Guest Agent RPC
 	logrus.WithFields(logrus.Fields{
 		"name":      vmi.Name,
 		"namespace": vmi.Namespace,
 	}).Debug("node not found by name or annotation, querying guest agent info as fallback")
+
+	// NOTE: Avoid calling GuestOsInfo unless strictly necessary. It is an expensive
+	// subresource call reaching into the guest agent that can easily bottleneck the controller.
+	// GuestOsInfo is used here as a slow-path fallback solely to handle edge cases where
+	// users configure custom VM hostnames.
+	//
+	// Architectural Limitation: Relying on custom or fixed cloud-init-based hostnames
+	// conflicts with Rancher machine pool design. A single machine pool can scale to
+	// multiple instances; enforcing static custom hostnames limits this operational
+	// flexibility and risks severe name collisions.
+	//
+	// Optimization: Even when custom hostnames are used, HCP smartly persists the
+	// resolved VMI-to-node mapping (via node annotations/cache) upon the initial lookup.
+	// Subsequent reconciliations hit the fast path directly, entirely bypassing
+	// redundant GuestOsInfo calls.
 
 	guestAgentInfo, agentErr := h.kubevirtClient.VirtualMachineInstance(vmi.Namespace).GuestOsInfo(context.TODO(), vmi.Name)
 	if agentErr != nil {
@@ -155,15 +170,18 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 		return vmi, fmt.Errorf("failed to get guest agent info for VMI %s/%s: %w", vmi.Namespace, vmi.Name, agentErr)
 	}
 
-	if guestAgentInfo.Hostname == "" {
+	hostName := guestAgentInfo.Hostname
+	// if VMI belongs to current guest cluster, but the hostname is empty, retry
+	if hostName == "" {
 		logrus.WithFields(logrus.Fields{
 			"name":      vmi.Name,
 			"namespace": vmi.Namespace,
-		}).Warn("guest agent info returned an empty hostname for VMI")
-		return vmi, nil
+		}).Info("guest agent info returned an empty hostname for VMI")
+		return vmi, fmt.Errorf("VMI %s/%s has invalid empty hostname, cannot decide int's node name", vmi.Namespace, vmi.Name)
 	}
 
-	node, err = h.nodeCache.Get(guestAgentInfo.Hostname)
+	// if VMI belongs to current guest cluster, but cannot find node by hostname, retry
+	node, err = h.nodeCache.Get(hostName)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return vmi, err
@@ -171,38 +189,54 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 		logrus.WithFields(logrus.Fields{
 			"name":      vmi.Name,
 			"namespace": vmi.Namespace,
-			"hostname":  guestAgentInfo.Hostname,
+			"hostname":  hostName,
 		}).Info("node with guest agent hostname not found in cache")
-		return vmi, nil
+		return vmi, fmt.Errorf("VMI %s/%s hostname %s, but can't find related node", vmi.Namespace, vmi.Name, hostName)
 	}
 
-	if err := h.annotateNodeWithVMIName(node, vmi.Name, string(vmi.UID)); err != nil {
+	// put the vmi info into node, for future quick look up
+	// it will ensure the expensive `GuestOsInfo` call runs as few as possible
+	if err := h.annotateNodeWithVMIHostName(node, vmi.Name, hostName); err != nil {
 		return vmi, fmt.Errorf("failed to annotate node %s: %w", node.Name, err)
 	}
 
-	return h.syncNodeAndNAD(vmi, node)
+	return h.syncNodeAndVMI(vmi, node)
 }
 
-func (h *Handler) findNodeByVMIAnnotation(vmName string) (*corev1.Node, error) {
+func (h *Handler) syncNodeAndVMI(vmi *kubevirtv1.VirtualMachineInstance, node *corev1.Node) (*kubevirtv1.VirtualMachineInstance, error) {
+	if !compareTopology(vmi.GetAnnotations(), node.GetLabels()) {
+		if err := h.reSync(node.Name); err != nil {
+			return vmi, fmt.Errorf("failed to reSync node %s and vmi due to topology difference %s/%s", node.Name, vmi.Namespace, vmi.Name)
+		}
+	}
+
+	if err := h.syncNADMappingConfigMap(); err != nil {
+		return vmi, fmt.Errorf("failed to sync NAD mapping ConfigMap: %w", err)
+	}
+	return vmi, nil
+}
+
+func (h *Handler) findNodeByVMIAnnotation(vmiName string) (*corev1.Node, error) {
 	nodes, err := h.nodeCache.List(labels.Everything())
 	if err != nil {
 		return nil, err
 	}
 
 	for _, node := range nodes {
-		if node.Annotations[utils.AnnotationGuestNodeVMName] == vmName {
+		if node.Annotations[utils.AnnotationVMNameOfGuestClusterNode] == vmiName {
 			return node, nil
 		}
 	}
 	return nil, nil
 }
 
-func (h *Handler) annotateNodeWithVMIName(node *corev1.Node, vmName, vmUID string) error {
+func (h *Handler) annotateNodeWithVMIName(node *corev1.Node, vmiName string) error {
 	if node == nil {
-		return fmt.Errorf("node is nil")
+		return nil
 	}
 
-	if node.Annotations[utils.AnnotationGuestNodeVMName] == vmName && node.Annotations[utils.AnnotationGuestNodeVMUID] == vmUID {
+	existing := node.Annotations[utils.AnnotationVMNameOfGuestClusterNode]
+	if existing == vmiName {
 		return nil
 	}
 
@@ -211,13 +245,11 @@ func (h *Handler) annotateNodeWithVMIName(node *corev1.Node, vmName, vmUID strin
 		nodeCopy.Annotations = make(map[string]string)
 	}
 
-	nodeCopy.Annotations[utils.AnnotationGuestNodeVMName] = vmName
-	nodeCopy.Annotations[utils.AnnotationGuestNodeVMUID] = vmUID
+	nodeCopy.Annotations[utils.AnnotationVMNameOfGuestClusterNode] = vmiName
 
 	logrus.WithFields(logrus.Fields{
-		"node":   node.Name,
-		"vmName": vmName,
-		"vmUID":  vmUID,
+		"node":    node.Name,
+		"vmiName": vmiName,
 	}).Info("annotating node with harvester VM metadata")
 
 	if _, err := h.nodeClient.Update(nodeCopy); err != nil {
@@ -227,99 +259,47 @@ func (h *Handler) annotateNodeWithVMIName(node *corev1.Node, vmName, vmUID strin
 	return nil
 }
 
-func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance) (*kubevirtv1.VirtualMachineInstance, error) {
-	// TODO: Add some unit tests for this controller
-
-	if vmi == nil || vmi.DeletionTimestamp != nil {
-		return vmi, nil
+// apparently, vmiName != hostName
+func (h *Handler) annotateNodeWithVMIHostName(node *corev1.Node, vmiName string, hostName string) error {
+	if node == nil {
+		return nil
 	}
 
-	// unrelated vmis, don't log anything
-	if vmi.Namespace != h.namespace {
-		return vmi, nil
+	existing := node.Annotations[utils.AnnotationVMNameOfGuestClusterNode]
+	if existing == vmiName {
+		return nil
 	}
 
-	if !utils.IsRunning(vmi) {
-		return vmi, nil
+	// customized hostname case: plans to overwrite others, something must be wrong, deny
+	if existing != "" {
+		err := fmt.Errorf("node annotation already points to vm(%s), can not annotate to new vm(%s) via it's hostname(%s) lookup", existing, vmiName, hostName)
+		logrus.Warnf("%s", err.Error())
+		return err
 	}
 
-	if creator := vmi.Labels[utils.HarvesterLabelKeyVirtualMachineCreator]; creator != utils.HarvesterVirtualMachineCreatorNodeDriver {
-		logrus.WithFields(logrus.Fields{
-			"namespace": vmi.Namespace,
-			"name":      vmi.Name,
-		}).Debug("skip processing virtual machine instance which is not from Harvester creator")
-		return vmi, nil
+	nodeCopy := node.DeepCopy()
+	if nodeCopy.Annotations == nil {
+		nodeCopy.Annotations = make(map[string]string)
 	}
 
-	gcName := utils.GetLabelGuestClusterName(vmi)
-	if gcName == "" {
-		logrus.WithFields(logrus.Fields{
-			"namespace": vmi.Namespace,
-			"name":      vmi.Name,
-		}).Debug("skip processing virtual machine instance which is not carrying cluster name")
-		return vmi, nil
-	}
-	savedGcName := cfg.GetConfig().ClusterName
-	// if HCP is started with an empty/default cluster name, it means the cluster-name param is not correctly passed
-	// the cluster-name check is skipped, and fallback to following check
-	if utils.IsNormalGuestClusterName(savedGcName) && gcName != savedGcName {
-		logrus.WithFields(logrus.Fields{
-			"namespace":             vmi.Namespace,
-			"name":                  vmi.Name,
-			"vm-guest-cluster":      gcName,
-			"current-guest-cluster": savedGcName,
-		}).Debug("skip processing virtual machine instance: VMI is not belonging to current cluster")
-		return vmi, nil
+	nodeCopy.Annotations[utils.AnnotationVMNameOfGuestClusterNode] = vmiName
+
+	logrus.WithFields(logrus.Fields{
+		"node":     node.Name,
+		"vmiName":  vmiName,
+		"hostName": hostName,
+	}).Info("annotating node with harvester VM via the hostName lookup")
+
+	if _, err := h.nodeClient.Update(nodeCopy); err != nil {
+		return fmt.Errorf("failed to update node %s annotations: %w", node.Name, err)
 	}
 
-	nodeName := vmi.Name
-	guestAgentInfo, err := h.kubevirtClient.VirtualMachineInstance(vmi.Namespace).GuestOsInfo(context.TODO(), vmi.Name)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"name":      vmi.Name,
-			"namespace": vmi.Namespace,
-		}).WithError(err).Error("failed to get guest agent info, fallback to use vmi name as node name")
-	} else {
-		if guestAgentInfo.Hostname != "" {
-			logrus.WithFields(logrus.Fields{
-				"name":      vmi.Name,
-				"namespace": vmi.Namespace,
-				"hostname":  guestAgentInfo.Hostname,
-			}).Info("get agent info success, using hostname as node name")
-			nodeName = guestAgentInfo.Hostname
-			h.nodeToVMName.Store(nodeName, vmi.Name)
-		} else {
-			logrus.WithFields(logrus.Fields{
-				"name":      vmi.Name,
-				"namespace": vmi.Namespace,
-			}).WithError(err).Error("failed to get guest agent info, fallback to use vmi name as node name")
-		}
-	}
-
-	node, err := h.nodeCache.Get(nodeName)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return vmi, err
-		}
-		// This vm does not belong to current cluster if the node is not found
-		return vmi, nil
-	}
-
-	if !compareTopology(vmi.GetAnnotations(), node.GetLabels()) {
-		if err := h.reSync(vmi); err != nil {
-			return vmi, err
-		}
-	}
-
-	if err := h.syncNADMappingConfigMap(); err != nil {
-		return vmi, fmt.Errorf("failed to sync NAD mapping ConfigMap: %w", err)
-	}
-
-	return vmi, nil
+	return nil
 }
 
-func (h *Handler) reSync(vmi *kubevirtv1.VirtualMachineInstance) error {
-	return cloudnodeutil.AddOrUpdateTaintOnNode(h.restClient, vmi.Name, &corev1.Taint{
+func (h *Handler) reSync(nodeName string) error {
+	logrus.Infof("prepare to taint node %s with %s to trigger a sync", nodeName, cloudproviderapi.TaintExternalCloudProvider)
+	return cloudnodeutil.AddOrUpdateTaintOnNode(h.restClient, nodeName, &corev1.Taint{
 		Key:    cloudproviderapi.TaintExternalCloudProvider,
 		Value:  "true",
 		Effect: corev1.TaintEffectPreferNoSchedule,
@@ -337,9 +317,12 @@ func compareTopology(a map[string]string, b map[string]string) bool {
 func (h *Handler) syncNADMappingConfigMap() error {
 	clusterName := cfg.GetConfig().ClusterName
 
-	if clusterName == "" || clusterName == utils.DefaultGuestClusterName {
+	if !utils.IsNormalGuestClusterName(clusterName) {
 		// Return an error and exit early to prevent cross-cluster pollution
-		return fmt.Errorf("failed to sync NAD mapping ConfigMap: guest cluster name configuration is empty/default, we cannot identify the cluster")
+		logrus.Warnf("failed to sync NAD mapping ConfigMap: guest cluster name %s is empty/default, cannot identify the cluster", clusterName)
+		// note: as the clusterName in injected at pod start time, don't return error to trigger reconciller
+		// as try makes no sense
+		return nil
 	}
 
 	sel := labels.Set{utils.LabelKeyGuestClusterNameOnVM: clusterName}.AsSelector()

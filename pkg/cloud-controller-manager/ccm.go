@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync"
 
 	"github.com/sirupsen/logrus"
 
@@ -40,8 +39,6 @@ type CloudProvider struct {
 	instances     cloudprovider.InstancesV2
 
 	kubevirtClient kubecli.KubevirtClient
-
-	nodeToVMName *sync.Map
 
 	Context context.Context
 
@@ -93,15 +90,12 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 		return nil, err
 	}
 
-	nodeToVMName := &sync.Map{}
 	cp := &CloudProvider{
 		localCoreFactory: ctlcore.NewFactoryFromConfigOrDie(localCfg),
 		lbFactory:        ctllb.NewFactoryFromConfigOrDie(clientConfig),
 		kubevirtFactory:  kubevirtFactory,
 
 		kubevirtClient: kubevirtClient,
-
-		nodeToVMName: nodeToVMName,
 
 		Context: signals.SetupSignalContext(),
 
@@ -115,10 +109,9 @@ func newCloudProvider(reader io.Reader) (cloudprovider.Interface, error) {
 		namespace:      namespace,
 	}
 	cp.instances = &instanceManager{
-		vmClient:     cp.kubevirtFactory.Kubevirt().V1().VirtualMachine(),
-		vmiClient:    cp.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
-		nodeToVMName: nodeToVMName,
-		namespace:    namespace,
+		vmClient:  cp.kubevirtFactory.Kubevirt().V1().VirtualMachine(),
+		vmiClient: cp.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
+		namespace: namespace,
 	}
 
 	logrus.Infof("New CloudProvider Harvester on namespace %s", namespace)
@@ -137,7 +130,6 @@ func (c *CloudProvider) Initialize(clientBuilder cloudprovider.ControllerClientB
 			c.localCoreFactory.Core().V1().ConfigMap(),
 			c.kubevirtFactory.Kubevirt().V1().VirtualMachineInstance(),
 			c.kubevirtClient,
-			c.nodeToVMName,
 			c.namespace,
 		)
 	}

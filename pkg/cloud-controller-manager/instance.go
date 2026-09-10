@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	ctlkubevirtv1 "github.com/harvester/harvester-cloud-provider/pkg/generated/controllers/kubevirt.io/v1"
 	"github.com/sirupsen/logrus"
@@ -19,10 +18,10 @@ import (
 )
 
 type instanceManager struct {
-	vmClient     ctlkubevirtv1.VirtualMachineClient
-	vmiClient    ctlkubevirtv1.VirtualMachineInstanceClient
-	nodeToVMName *sync.Map
-	namespace    string
+	vmClient  ctlkubevirtv1.VirtualMachineClient
+	vmiClient ctlkubevirtv1.VirtualMachineInstanceClient
+
+	namespace string
 }
 
 func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bool, error) {
@@ -78,23 +77,24 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 	return meta, nil
 }
 
+// getVM retrieves the Harvester VirtualMachine corresponding to the given guest node.
+// It prioritizes the explicitly persisted mapping stored in the node annotation
+// (written by the controller during hostname resolution), falling back to
+// a direct name match for standard RKE2/K3s deployments. For non-standard
+// deployments utilizing custom hostnames, the annotation bridges the gap, ensuring
+// reliable lookups without relying on ephemeral in-memory maps or expensive guest agent calls.
+//
+// For customized VMs, this function lazily relies on the VMI controller having
+// asynchronously fetched the GuestOS info, matched the guest hostname to the node name,
+// and annotated the node. The instanceManager does not attempt to guess or invoke
+// alternative fallback lookups on its own.
 func (i *instanceManager) getVM(node *v1.Node) (*kubevirtv1.VirtualMachine, error) {
-	// Path 1: Instant O(1) cache lookup by VM UID if providerID is populated
-	if node.Spec.ProviderID != "" {
-		vmUID := strings.TrimPrefix(node.Spec.ProviderID, ProviderName+"://")
-		vms, err := i.vmCache.GetByIndex(UIDIndex, vmUID)
-		if err == nil && len(vms) > 0 {
-			return vms[0], nil
-		}
+	vmiName := node.Annotations[utils.AnnotationVMNameOfGuestClusterNode]
+	if vmiName == "" {
+		vmiName = node.Name
 	}
 
-	// Path 2: Bootstrap fallback (first registration before providerID is written back)
-	// Works reliably because vm.Name == node.Name in CAPI MachinePool deployments
-	nodeName := node.Name
-	if vmName, ok := i.nodeToVMName.Load(nodeName); ok {
-		nodeName = vmName.(string)
-	}
-	return i.vmClient.Get(i.namespace, nodeName, metav1.GetOptions{})
+	return i.vmClient.Get(i.namespace, vmiName, metav1.GetOptions{})
 }
 
 /*
