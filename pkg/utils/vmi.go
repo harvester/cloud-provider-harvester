@@ -1,6 +1,7 @@
 package utils
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
@@ -89,6 +90,15 @@ func GetLabelGuestClusterName(vmi *kubevirtv1.VirtualMachineInstance) string {
 		return ""
 	}
 	return vmi.Labels[LabelKeyGuestClusterNameOnVM]
+}
+
+func IsVmiCreatedFromHarvesterCreator(vmi *kubevirtv1.VirtualMachineInstance) bool {
+	if vmi == nil {
+		return false
+	}
+
+	creator := vmi.Labels[HarvesterLabelKeyVirtualMachineCreator]
+	return creator == HarvesterVirtualMachineCreatorNodeDriver
 }
 
 // non-empty, non-default guest cluster name
