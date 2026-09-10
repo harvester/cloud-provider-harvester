@@ -14,23 +14,30 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// NdoeCache provides an in-memory thread-safe store for simulating NodeCache and NodeClient in unit tests.
-type NdoeCache struct {
+// NodeCache provides an in-memory thread-safe store for simulating NodeCache and NodeClient in unit tests.
+type NodeCache struct {
 	lock  sync.Mutex
 	nodes map[string]*v1.Node
 	err   error
 }
 
-func NewNdoeCache(initialNodes map[string]*v1.Node) *NdoeCache {
+func NewNodeCache(initialNodes map[string]*v1.Node) *NodeCache {
 	if initialNodes == nil {
 		initialNodes = make(map[string]*v1.Node)
 	}
-	return &NdoeCache{nodes: initialNodes}
+	// Deep copy initial nodes to prevent cross-test pollution
+	copiedNodes := make(map[string]*v1.Node, len(initialNodes))
+	for k, v := range initialNodes {
+		if v != nil {
+			copiedNodes[k] = v.DeepCopy()
+		}
+	}
+	return &NodeCache{nodes: copiedNodes}
 }
 
 // --- NodeCache methods ---
 
-func (f *NdoeCache) Get(name string) (*v1.Node, error) {
+func (f *NodeCache) Get(name string) (*v1.Node, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	if f.err != nil {
@@ -43,7 +50,7 @@ func (f *NdoeCache) Get(name string) (*v1.Node, error) {
 	return node.DeepCopy(), nil
 }
 
-func (f *NdoeCache) List(selector labels.Selector) ([]*v1.Node, error) {
+func (f *NodeCache) List(selector labels.Selector) ([]*v1.Node, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	if f.err != nil {
@@ -58,16 +65,16 @@ func (f *NdoeCache) List(selector labels.Selector) ([]*v1.Node, error) {
 	return result, nil
 }
 
-func (f *NdoeCache) AddIndexer(_ string, _ generic.Indexer[*v1.Node]) {}
-func (f *NdoeCache) GetByIndex(_, _ string) ([]*v1.Node, error)       { return nil, nil }
+func (f *NodeCache) AddIndexer(_ string, _ generic.Indexer[*v1.Node]) {}
+func (f *NodeCache) GetByIndex(_, _ string) ([]*v1.Node, error)       { return nil, nil }
 
 // --- NodeClient methods ---
 
-func (f *NdoeCache) GetClient(name string, _ metav1.GetOptions) (*v1.Node, error) {
+func (f *NodeCache) GetClient(name string, _ metav1.GetOptions) (*v1.Node, error) {
 	return f.Get(name)
 }
 
-func (f *NdoeCache) Create(node *v1.Node) (*v1.Node, error) {
+func (f *NodeCache) Create(node *v1.Node) (*v1.Node, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	if _, ok := f.nodes[node.Name]; ok {
@@ -77,7 +84,7 @@ func (f *NdoeCache) Create(node *v1.Node) (*v1.Node, error) {
 	return node.DeepCopy(), nil
 }
 
-func (f *NdoeCache) Update(node *v1.Node) (*v1.Node, error) {
+func (f *NodeCache) Update(node *v1.Node) (*v1.Node, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	if _, ok := f.nodes[node.Name]; !ok {
@@ -87,7 +94,7 @@ func (f *NdoeCache) Update(node *v1.Node) (*v1.Node, error) {
 	return node.DeepCopy(), nil
 }
 
-func (f *NdoeCache) Delete(name string, _ *metav1.DeleteOptions) error {
+func (f *NodeCache) Delete(name string, _ *metav1.DeleteOptions) error {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	if _, ok := f.nodes[name]; !ok {
@@ -97,39 +104,69 @@ func (f *NdoeCache) Delete(name string, _ *metav1.DeleteOptions) error {
 	return nil
 }
 
-func (f *NdoeCache) DeleteCollection(_ *metav1.DeleteOptions, _ metav1.ListOptions) error { return nil }
-func (f *NdoeCache) Watch(_ metav1.ListOptions) (watch.Interface, error)                  { return nil, nil }
-func (f *NdoeCache) Patch(name string, _ types.PatchType, _ []byte, _ ...string) (*v1.Node, error) {
+func (f *NodeCache) DeleteCollection(_ *metav1.DeleteOptions, _ metav1.ListOptions) error { return nil }
+func (f *NodeCache) Watch(_ metav1.ListOptions) (watch.Interface, error)                  { return nil, nil }
+func (f *NodeCache) Patch(name string, _ types.PatchType, _ []byte, _ ...string) (*v1.Node, error) {
 	return f.Get(name)
 }
 
-// FakeNodeClient implements ctlcorev1.NodeClient by wrapping NdoeCache to satisfy both client and cache methods cleanly.
-type FakeNodeClient struct {
-	*NdoeCache
+// NodeClient implements ctlcorev1.NodeClient by wrapping NodeCache to satisfy both client and cache methods cleanly.
+type NodeClient struct {
+	cache *NodeCache
 }
 
-func NewFakeNodeClient(cache *NdoeCache) *FakeNodeClient {
-	return &FakeNodeClient{NdoeCache: cache}
+func NewNodeClient(cache *NodeCache) *NodeClient {
+	return &NodeClient{cache: cache}
 }
 
-func (f *FakeNodeClient) Get(name string, _ metav1.GetOptions) (*v1.Node, error) {
-	return f.NdoeCache.Get(name)
+func (f *NodeClient) Get(name string, opts metav1.GetOptions) (*v1.Node, error) {
+	return f.cache.Get(name)
 }
 
-func (f *FakeNodeClient) List(_ metav1.ListOptions) (*v1.NodeList, error) {
-	f.lock.Lock()
-	defer f.lock.Unlock()
-	var items []v1.Node
-	for _, node := range f.nodes {
-		items = append(items, *node.DeepCopy())
+func (f *NodeClient) List(opts metav1.ListOptions) (*v1.NodeList, error) {
+	nodes, err := f.cache.List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+	items := make([]v1.Node, len(nodes))
+	for i, node := range nodes {
+		items[i] = *node
 	}
 	return &v1.NodeList{Items: items}, nil
 }
 
-func (f *FakeNodeClient) UpdateStatus(node *v1.Node) (*v1.Node, error) {
-	return f.Update(node)
+func (f *NodeClient) Create(node *v1.Node) (*v1.Node, error) {
+	return f.cache.Create(node)
 }
 
-func (f *FakeNodeClient) WithImpersonation(_ rest.ImpersonationConfig) (generic.NonNamespacedClientInterface[*v1.Node, *v1.NodeList], error) {
+func (f *NodeClient) Update(node *v1.Node) (*v1.Node, error) {
+	return f.cache.Update(node)
+}
+
+func (f *NodeClient) Delete(name string, options *metav1.DeleteOptions) error {
+	return f.cache.Delete(name, options)
+}
+
+func (f *NodeClient) DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error {
+	return f.cache.DeleteCollection(options, listOptions)
+}
+
+func (f *NodeClient) GetStatus(name string, opts metav1.GetOptions) (*v1.Node, error) {
+	return f.cache.Get(name)
+}
+
+func (f *NodeClient) UpdateStatus(node *v1.Node) (*v1.Node, error) {
+	return f.cache.Update(node)
+}
+
+func (f *NodeClient) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (*v1.Node, error) {
+	return f.cache.Patch(name, pt, data, subresources...)
+}
+
+func (f *NodeClient) Watch(opts metav1.ListOptions) (watch.Interface, error) {
+	return f.cache.Watch(opts)
+}
+
+func (f *NodeClient) WithImpersonation(_ rest.ImpersonationConfig) (generic.NonNamespacedClientInterface[*v1.Node, *v1.NodeList], error) {
 	panic("implement me")
 }
