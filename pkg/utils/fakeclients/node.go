@@ -1,6 +1,7 @@
 package fakeclients
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/rancher/wrangler/v3/pkg/generic"
@@ -97,10 +98,14 @@ func (f *NodeCache) Delete(name string, _ *metav1.DeleteOptions) error {
 	return nil
 }
 
-func (f *NodeCache) DeleteCollection(_ *metav1.DeleteOptions, _ metav1.ListOptions) error { return nil }
-func (f *NodeCache) Watch(_ metav1.ListOptions) (watch.Interface, error)                  { return nil, nil }
+func (f *NodeCache) DeleteCollection(_ *metav1.DeleteOptions, _ metav1.ListOptions) error {
+	return fmt.Errorf("implement me")
+}
+func (f *NodeCache) Watch(_ metav1.ListOptions) (watch.Interface, error) {
+	return nil, fmt.Errorf("implement me")
+}
 func (f *NodeCache) Patch(name string, _ types.PatchType, _ []byte, _ ...string) (*v1.Node, error) {
-	return f.Get(name)
+	return nil, fmt.Errorf("implement me")
 }
 
 // NodeClient implements ctlcorev1.NodeClient by wrapping NodeCache to satisfy both client and cache methods cleanly.
@@ -122,6 +127,9 @@ func (f *NodeClient) List(opts metav1.ListOptions) (*v1.NodeList, error) {
 		return nil, err
 	}
 	nodes, err := f.cache.List(selector)
+	if err != nil {
+		return nil, err
+	}
 	items := make([]v1.Node, len(nodes))
 	for i, node := range nodes {
 		items[i] = *node
@@ -162,5 +170,5 @@ func (f *NodeClient) Watch(opts metav1.ListOptions) (watch.Interface, error) {
 }
 
 func (f *NodeClient) WithImpersonation(_ rest.ImpersonationConfig) (generic.NonNamespacedClientInterface[*v1.Node, *v1.NodeList], error) {
-	panic("implement me")
+	return nil, fmt.Errorf("implement me")
 }

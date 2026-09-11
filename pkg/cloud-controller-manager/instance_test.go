@@ -45,6 +45,7 @@ func getCommandAndFlag(mgmtNetwork, cidrRanges string, excludeList []string) (*c
 	f.String(utils.FlagManagementNetwork, mgmtNetwork, "")
 	f.String(utils.FlagNodeIPCIDR, cidrRanges, "")
 	f.Bool(utils.FlagDisableVmiController, false, "")
+	f.Bool(utils.FlagDisableHostnameLookup, false, "")
 	f.Bool(utils.FlagShowFullHelpOnError, false, "")
 	f.StringSlice(utils.FlagCloudProviderControllers, []string{}, "")
 	f.StringSlice(utils.FlagNodeExcludeIPRanges, excludeList, "")
@@ -614,6 +615,67 @@ func Test_resolveNodeIPs(t *testing.T) {
 
 			if !reflect.DeepEqual(actual, tt.expected) {
 				t.Errorf("resolveNodeIPs() [%s] failed\nGot:  %v\nWant: %v", tt.name, actual, tt.expected)
+			}
+		})
+	}
+}
+
+func Test_getVMName(t *testing.T) {
+	tests := []struct {
+		name                  string
+		disableHostnameLookup bool
+		nodeName              string
+		annotations           map[string]string
+		expectedVMIName       string
+	}{
+		{
+			name:                  "Annotation present and lookup enabled, return annotation",
+			disableHostnameLookup: false,
+			nodeName:              "node-standard-1",
+			annotations:           map[string]string{utils.AnnotationVMNameOfGuestClusterNode: "vm-custom-1"},
+			expectedVMIName:       "vm-custom-1",
+		},
+		{
+			name:                  "Annotation absent and lookup enabled, return nodename",
+			disableHostnameLookup: false,
+			nodeName:              "node-standard-2",
+			annotations:           nil,
+			expectedVMIName:       "node-standard-2",
+		},
+		{
+			name:                  "Annotation present but lookup disabled, return nodename",
+			disableHostnameLookup: true,
+			nodeName:              "node-standard-3",
+			annotations:           map[string]string{utils.AnnotationVMNameOfGuestClusterNode: "vm-custom-3"},
+			expectedVMIName:       "node-standard-3",
+		},
+		{
+			name:                  "Annotation absent and lookup disabled, return nodename",
+			disableHostnameLookup: true,
+			nodeName:              "node-standard-4",
+			annotations:           nil,
+			expectedVMIName:       "node-standard-4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.GetConfig()
+			oldDisable := cfg.DisableHostnameLookup
+			cfg.DisableHostnameLookup = tt.disableHostnameLookup
+			defer func() {
+				cfg.DisableHostnameLookup = oldDisable
+			}()
+
+			node := &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        tt.nodeName,
+					Annotations: tt.annotations,
+				},
+			}
+
+			if got := getVMNameFromNode(node); got != tt.expectedVMIName {
+				t.Errorf("getVMNameFromNode() = %q, expected %q", got, tt.expectedVMIName)
 			}
 		})
 	}

@@ -124,6 +124,19 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 		}).Debug("cluster-name parameter is empty or invalid in HCP config; falling back to checking VMI directly, which may be inaccurate in multi-cluster namespaces")
 	}
 
+	// when hostname lookup is disabled, controller works solely via vmi.Name == node.Name
+	// avoiding tricky, error-prone guest OS lookup scenarios.
+	if cfg.GetConfig().DisableHostnameLookup {
+		return h.handleStrictVMNameNodeMapping(vmi)
+	}
+
+	// WARNING: legacy behaviour
+	// HCP supports node.Name=vmi.hostname where vmi.hostname != vmi.Name.
+	// Lacking explicit annotations or labels on the node/object, it blindly guesses the relationship between these names,
+	// which is inherently error-prone.
+	// The following code tries its best to handle this, but cannot deal with all tricky scenarios.
+	// To eliminate this entirely, use the config option `--disable-hostname-lookup=true`.
+
 	// Fast Path A: Direct Name Match (Standard RKE2/K3s deployments)
 	// For standard RKE2/K3s deployments, this direct lookup is entirely sufficient.
 	// We avoid using an in-memory shared map/cache; instead, we persist the mapping
@@ -310,7 +323,8 @@ func topologyChanged(a map[string]string, b map[string]string) bool {
 // syncNADMappingConfigMap evaluates the aggregate state across the cluster's VMI list
 // while properly filters out non-running or migrating VMs.
 func (h *Handler) OnVmiChangedNetworkMapping(_ string, vmi *kubevirtv1.VirtualMachineInstance) (*kubevirtv1.VirtualMachineInstance, error) {
-	if vmi == nil || vmi.DeletionTimestamp != nil {
+	// note: as there is no OnRemove controller, the OnChange takes care of `vmi.DeletionTimestamp != nil `
+	if vmi == nil {
 		return vmi, nil
 	}
 
@@ -384,4 +398,16 @@ func (h *Handler) syncNADMappingConfigMap() error {
 		_, err = h.configMapClient.Update(cmCopy)
 		return err
 	})
+}
+
+// handleStrictVMNameNodeMapping enforces a strict 1:1 mapping between the VirtualMachineInstance
+// name and the Kubernetes Node name. When hostname lookup is disabled, it bypasses annotations
+// and guest agent lookups, directly fetching the corresponding node from the cache using vmi.Name
+// and synchronizing them.
+func (h *Handler) handleStrictVMNameNodeMapping(vmi *kubevirtv1.VirtualMachineInstance) (*kubevirtv1.VirtualMachineInstance, error) {
+	node, err := h.nodeCache.Get(vmi.Name)
+	if err != nil {
+		return vmi, fmt.Errorf("failed to get node via vm name %s/%s: %w", vmi.Namespace, vmi.Name, err)
+	}
+	return h.syncNodeAndVMI(vmi, node)
 }
