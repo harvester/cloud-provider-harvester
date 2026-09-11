@@ -262,10 +262,10 @@ func TestOnVmiChanged_SkipScenarios(t *testing.T) {
 			}(),
 		},
 		{
-			name: "VMI missing guest cluster name label",
+			name: "VMI has another guest cluster name label",
 			vmi: func() *kubevirtv1.VirtualMachineInstance {
 				v := baseVMI.DeepCopy()
-				delete(v.Labels, utils.LabelKeyGuestClusterNameOnVM)
+				v.Labels[utils.LabelKeyGuestClusterNameOnVM] = "other-tenant"
 				return v
 			}(),
 		},

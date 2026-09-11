@@ -94,18 +94,11 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 	}
 
 	gcName := utils.GetLabelGuestClusterName(vmi)
-	if gcName == "" {
-		logrus.WithFields(logrus.Fields{
-			"namespace": vmi.Namespace,
-			"name":      vmi.Name,
-		}).Debug("skip processing virtual machine instance which is not carrying cluster name")
-		return vmi, nil
-	}
 
-	// if HCP is started with an empty/default cluster name, it means the cluster-name param is not correctly passed
-	// the cluster-name check is skipped, and fallback to following check
+	// If both the configured cluster and the VMI specify a valid guest cluster name,
+	// perform a strict check to ensure they match.
 	savedGcName := cfg.GetConfig().ClusterName
-	if utils.IsNormalGuestClusterName(savedGcName) {
+	if utils.IsNormalGuestClusterName(savedGcName) && utils.IsNormalGuestClusterName(gcName) {
 		if gcName != savedGcName {
 			logrus.WithFields(logrus.Fields{
 				"namespace":             vmi.Namespace,
@@ -115,13 +108,16 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 			}).Debug("skip processing virtual machine instance: VMI does not belong to current cluster")
 			return vmi, nil
 		}
+		// match, continue
 	} else {
+		// Fallback for legacy environments where guest cluster info is missing or non-standard;
+		// continue processing, noting that behavior may be ambiguous in multi-cluster namespaces.
 		logrus.WithFields(logrus.Fields{
-			"namespace":             vmi.Namespace,
-			"name":                  vmi.Name,
-			"vm-guest-cluster":      gcName,
-			"current-guest-cluster": savedGcName,
-		}).Debug("cluster-name parameter is empty or invalid in HCP config; falling back to checking VMI directly, which may be inaccurate in multi-cluster namespaces")
+			"namespace":           vmi.Namespace,
+			"name":                vmi.Name,
+			"vmGuestCluster":      gcName,
+			"currentGuestCluster": savedGcName,
+		}).Debug("Insufficient guest cluster information; proceeding")
 	}
 
 	// when hostname lookup is disabled, controller works solely via vmi.Name == node.Name
