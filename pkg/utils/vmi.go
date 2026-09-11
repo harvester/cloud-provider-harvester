@@ -1,6 +1,7 @@
 package utils
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
@@ -50,7 +51,8 @@ func GetCommonVMINADs(vmis []*kubevirtv1.VirtualMachineInstance) map[string]stri
 	// Strip VMIs that are not Running or have no guest-agent interface data.
 	active := make([]kubevirtv1.VirtualMachineInstance, 0, len(vmis))
 	for _, vmi := range vmis {
-		if vmi == nil {
+		// if vmi is on deletion, filter it
+		if vmi == nil || vmi.DeletionTimestamp != nil {
 			continue
 		}
 		if IsRunning(vmi) && IsMigrationCompleted(vmi) && len(vmi.Status.Interfaces) > 0 {
@@ -77,9 +79,45 @@ func GetCommonVMINADs(vmis []*kubevirtv1.VirtualMachineInstance) map[string]stri
 }
 
 func IsMigrationCompleted(vmi *kubevirtv1.VirtualMachineInstance) bool {
-	return vmi.Status.MigrationState == nil || vmi.Status.MigrationState.Completed
+	return vmi != nil && (vmi.Status.MigrationState == nil || vmi.Status.MigrationState.Completed)
 }
 
 func IsRunning(vmi *kubevirtv1.VirtualMachineInstance) bool {
-	return vmi.Status.Phase == kubevirtv1.Running
+	return vmi != nil && vmi.Status.Phase == kubevirtv1.Running
+}
+
+func GetLabelGuestClusterName(vmi *kubevirtv1.VirtualMachineInstance) string {
+	if vmi == nil {
+		return ""
+	}
+	return vmi.Labels[LabelKeyGuestClusterNameOnVM]
+}
+
+func IsVmiCreatedFromHarvesterCreator(vmi *kubevirtv1.VirtualMachineInstance) bool {
+	if vmi == nil {
+		return false
+	}
+
+	creator := vmi.Labels[HarvesterLabelKeyVirtualMachineCreator]
+	return creator == HarvesterVirtualMachineCreatorNodeDriver
+}
+
+// non-empty, non-default guest cluster name
+func IsNormalGuestClusterName(gcName string) bool {
+	return gcName != "" && gcName != DefaultGuestClusterName
+}
+
+// IsGuestAgentConnected returns true if the VMI has an active and connected qemu-guest-agent.
+func IsGuestAgentConnected(vmi *kubevirtv1.VirtualMachineInstance) bool {
+	if vmi == nil {
+		return false
+	}
+
+	for _, cond := range vmi.Status.Conditions {
+		if cond.Type == kubevirtv1.VirtualMachineInstanceAgentConnected {
+			return cond.Status == corev1.ConditionTrue
+		}
+	}
+
+	return false
 }

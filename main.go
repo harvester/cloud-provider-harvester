@@ -155,6 +155,9 @@ func registerHarvesterFlags(harv *pflag.FlagSet) {
 
 	harv.BoolVar(&config.ShowFullHelpOnError, utils.FlagShowFullHelpOnError, false,
 		"If a configuration error occurs at startup, the full help menu and flag list will be displayed. (default false)")
+
+	harv.BoolVar(&config.DisableHostnameLookup, utils.FlagDisableHostnameLookup, false,
+		"Disable legacy guest agent hostname lookups for VM-to-node mapping, enforcing strict vmi.Name == node.Name mapping.")
 }
 
 // logFrameworkVersion logs the detailed version structure as a single-line JSON payload.

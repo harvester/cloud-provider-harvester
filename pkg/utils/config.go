@@ -21,7 +21,7 @@ func GetCurrentConfigString(cfg *config.Config) string {
 		return ""
 	}
 
-	return fmt.Sprintf("--%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v",
+	return fmt.Sprintf("--%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v --%s=%v",
 		FlagClusterName, cfg.ClusterName,
 		FlagCloudProviderControllers, cfg.CloudProviderControllers,
 		FlagManagementNetwork, cfg.ManagementNetwork,
@@ -29,6 +29,7 @@ func GetCurrentConfigString(cfg *config.Config) string {
 		// Use helper to ensure a comma-separated string instead of a Go slice [a b]
 		FlagNodeExcludeIPRanges, cfg.GetNodeExcludeIPRangesCmdString(),
 		FlagDisableAnnotationAlphaProvidedIPAddr, cfg.DisableAnnotationAlphaProvidedIPAddr,
+		FlagDisableHostnameLookup, cfg.DisableHostnameLookup,
 		FlagDisableVmiController, cfg.DisableVMIController,
 		FlagShowFullHelpOnError, cfg.ShowFullHelpOnError)
 }
@@ -133,6 +134,9 @@ func SyncAndValidateHarvesterConfig(cmd *cobra.Command, cfg *config.Config) erro
 	}
 
 	if cfg.DisableAnnotationAlphaProvidedIPAddr, err = getBool(FlagDisableAnnotationAlphaProvidedIPAddr); err != nil {
+		return err
+	}
+	if cfg.DisableHostnameLookup, err = getBool(FlagDisableHostnameLookup); err != nil {
 		return err
 	}
 	if cfg.DisableVMIController, err = getBool(FlagDisableVmiController); err != nil {

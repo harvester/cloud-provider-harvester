@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	ctlkubevirtv1 "github.com/harvester/harvester-cloud-provider/pkg/generated/controllers/kubevirt.io/v1"
 	"github.com/sirupsen/logrus"
@@ -19,13 +18,16 @@ import (
 )
 
 type instanceManager struct {
-	vmClient     ctlkubevirtv1.VirtualMachineClient
-	vmiClient    ctlkubevirtv1.VirtualMachineInstanceClient
-	nodeToVMName *sync.Map
-	namespace    string
+	vmClient  ctlkubevirtv1.VirtualMachineClient
+	vmiClient ctlkubevirtv1.VirtualMachineInstanceClient
+
+	namespace string
 }
 
 func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bool, error) {
+	if node == nil {
+		return false, fmt.Errorf("node is nil")
+	}
 	if _, err := i.getVM(node); err != nil {
 		if !errors.IsNotFound(err) {
 			return false, err
@@ -36,6 +38,9 @@ func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bo
 }
 
 func (i *instanceManager) InstanceShutdown(ctx context.Context, node *v1.Node) (bool, error) {
+	if node == nil {
+		return false, fmt.Errorf("node is nil")
+	}
 	vm, err := i.getVM(node)
 	if err != nil {
 		return false, err
@@ -44,6 +49,9 @@ func (i *instanceManager) InstanceShutdown(ctx context.Context, node *v1.Node) (
 }
 
 func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (*cloudprovider.InstanceMetadata, error) {
+	if node == nil {
+		return nil, fmt.Errorf("node is nil")
+	}
 	vm, err := i.getVM(node)
 	if err != nil {
 		return nil, err
@@ -79,11 +87,24 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 }
 
 func (i *instanceManager) getVM(node *v1.Node) (*kubevirtv1.VirtualMachine, error) {
-	nodeName := node.Name
-	if vmName, ok := i.nodeToVMName.Load(nodeName); ok {
-		nodeName = vmName.(string)
+	return i.vmClient.Get(i.namespace, getVMNameFromNode(node), metav1.GetOptions{})
+}
+
+// getVMNameFromNode retrieves the Harvester VirtualMachine name corresponding to the given guest node.
+// Unless DisableHostnameLookup is enabled, it prioritizes the explicitly persisted
+// mapping stored in the node annotation (written by the controller during hostname resolution),
+// falling back to a direct name match for standard RKE2/K3s deployments. When
+// DisableHostnameLookup is true, annotation-based hostname resolution is bypassed,
+// enforcing a direct match using node.Name.
+func getVMNameFromNode(node *v1.Node) string {
+	vmiName := node.Name
+	if !config.GetConfig().DisableHostnameLookup {
+		if savedName := node.Annotations[utils.AnnotationVMNameOfGuestClusterNode]; savedName != "" {
+			vmiName = savedName
+		}
 	}
-	return i.vmClient.Get(i.namespace, nodeName, metav1.GetOptions{})
+
+	return vmiName
 }
 
 /*
