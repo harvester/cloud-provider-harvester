@@ -7,6 +7,9 @@ import (
 
 	cfg "github.com/harvester/harvester-cloud-provider/pkg/config"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	kubefake "k8s.io/client-go/kubernetes/fake"
+
 	utils "github.com/harvester/harvester-cloud-provider/pkg/utils"
 	"github.com/harvester/harvester-cloud-provider/pkg/utils/fakeclients"
 	corev1 "k8s.io/api/core/v1"
@@ -711,4 +714,170 @@ func TestOnVmiChanged_LegacyHostnameLookup(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOnVmiChanged_ReSyncPatchCases(t *testing.T) {
+	vmiName := "vmi-custom-hostname"
+	targetNodeName := "target-node-name"
+	clusterName := "test-cluster"
+
+	origClusterName := cfg.GetConfig().ClusterName
+	cfg.GetConfig().ClusterName = clusterName
+	defer func() { cfg.GetConfig().ClusterName = origClusterName }()
+
+	origDisableLookup := cfg.GetConfig().DisableHostnameLookup
+	cfg.GetConfig().DisableHostnameLookup = false
+	defer func() { cfg.GetConfig().DisableHostnameLookup = origDisableLookup }()
+
+	baseVMI := &kubevirtv1.VirtualMachineInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vmiName,
+			Namespace: "default",
+			Labels: map[string]string{
+				utils.LabelKeyGuestClusterNameOnVM:           clusterName,
+				utils.HarvesterLabelKeyVirtualMachineCreator: utils.HarvesterVirtualMachineCreatorNodeDriver,
+			},
+			Annotations: map[string]string{
+				"topology.kubernetes.io/zone": "zone-b", // Mismatch triggers topologyChanged = true
+			},
+		},
+		Status: kubevirtv1.VirtualMachineInstanceStatus{
+			Phase: kubevirtv1.Running,
+			Conditions: []kubevirtv1.VirtualMachineInstanceCondition{
+				{
+					Type:   kubevirtv1.VirtualMachineInstanceAgentConnected,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	// vmi name does not match node name, but hostname match
+	baseVMI2 := &kubevirtv1.VirtualMachineInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "customized-with-host-name-match",
+			Namespace: "default",
+			Labels: map[string]string{
+				utils.LabelKeyGuestClusterNameOnVM:           clusterName,
+				utils.HarvesterLabelKeyVirtualMachineCreator: utils.HarvesterVirtualMachineCreatorNodeDriver,
+			},
+			Annotations: map[string]string{
+				"topology.kubernetes.io/zone": "zone-b", // Mismatch triggers topologyChanged = true
+			},
+		},
+		Status: kubevirtv1.VirtualMachineInstanceStatus{
+			Phase: kubevirtv1.Running,
+			Conditions: []kubevirtv1.VirtualMachineInstanceCondition{
+				{
+					Type:   kubevirtv1.VirtualMachineInstanceAgentConnected,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	t.Run("(1) existing node triggers reSync", func(t *testing.T) {
+		initialNode := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: targetNodeName,
+				Labels: map[string]string{
+					"topology.kubernetes.io/zone": "zone-a",
+				},
+			},
+		}
+
+		// Use standard client-go fake clientset which implements kubernetes.Interface completely
+		fakeK8sClient := kubefake.NewSimpleClientset(initialNode)
+
+		fakeCache := fakeclients.NewNodeCache(map[string]*corev1.Node{targetNodeName: initialNode})
+		fakeClient := fakeclients.NewNodeClient(fakeCache)
+
+		fakeVMIClient := &FakeVMIInterface{
+			GuestOsInfoFunc: func(ctx context.Context, name string) (kubevirtv1.VirtualMachineInstanceGuestAgentInfo, error) {
+				return kubevirtv1.VirtualMachineInstanceGuestAgentInfo{
+					Hostname: targetNodeName,
+				}, nil
+			},
+		}
+
+		fakeKubevirtClient := &FakeKubevirtClient{
+			VMIHandler: func(ns string) kubecli.VirtualMachineInstanceInterface {
+				return fakeVMIClient
+			},
+		}
+
+		h := &Handler{
+			namespace:      "default",
+			nodeCache:      fakeCache,
+			nodeClient:     fakeClient,
+			restClient:     fakeK8sClient,
+			kubevirtClient: fakeKubevirtClient,
+		}
+
+		_, err := h.OnVmiChanged("", baseVMI)
+		if err != nil {
+			t.Fatalf("expected no error but got %v", err)
+		}
+	})
+
+	t.Run("(2) existing node triggers reSync and hits patch error", func(t *testing.T) {
+		initialNode := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: targetNodeName,
+				Labels: map[string]string{
+					"topology.kubernetes.io/zone": "zone-a",
+				},
+			},
+		}
+
+		initialNode2 := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "not-the-target-node",
+				Labels: map[string]string{
+					"topology.kubernetes.io/zone": "zone-a",
+				},
+			},
+		}
+
+		// It is tedious to fully fake a k8s rest client, so we use a clever setup:
+		// the local node cache is initialized with targetNodeName (resolved via guest agent),
+		// but restClient is initialized with initialNode2 (with another name).
+		//
+		// Legacy code wrongly used vmi.Name to taint the node when a customized hostname
+		// was used instead of the resolved node name. This test case simulates that scenario
+		// to ensure the controller correctly targets the resolved node name rather than vmi.Name.
+		fakeK8sClient := kubefake.NewSimpleClientset(initialNode2)
+		fakeCache := fakeclients.NewNodeCache(map[string]*corev1.Node{targetNodeName: initialNode})
+		fakeClient := fakeclients.NewNodeClient(fakeCache)
+
+		fakeVMIClient := &FakeVMIInterface{
+			GuestOsInfoFunc: func(ctx context.Context, name string) (kubevirtv1.VirtualMachineInstanceGuestAgentInfo, error) {
+				return kubevirtv1.VirtualMachineInstanceGuestAgentInfo{
+					Hostname: targetNodeName,
+				}, nil
+			},
+		}
+
+		fakeKubevirtClient := &FakeKubevirtClient{
+			VMIHandler: func(ns string) kubecli.VirtualMachineInstanceInterface {
+				return fakeVMIClient
+			},
+		}
+
+		h := &Handler{
+			namespace:      "default",
+			nodeCache:      fakeCache,
+			nodeClient:     fakeClient,
+			restClient:     fakeK8sClient,
+			kubevirtClient: fakeKubevirtClient,
+		}
+
+		_, err := h.OnVmiChanged("", baseVMI2)
+		if err == nil {
+			t.Fatalf("expected NotFound error when updating a removed node, got nil")
+		}
+		if !apierrors.IsNotFound(err) && !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("expected NotFound error, got: %v", err)
+		}
+	})
 }

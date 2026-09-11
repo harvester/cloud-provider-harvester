@@ -323,9 +323,11 @@ func topologyChanged(a map[string]string, b map[string]string) bool {
 // syncNADMappingConfigMap evaluates the aggregate state across the cluster's VMI list
 // while properly filters out non-running or migrating VMs.
 func (h *Handler) OnVmiChangedNetworkMapping(_ string, vmi *kubevirtv1.VirtualMachineInstance) (*kubevirtv1.VirtualMachineInstance, error) {
-	// note: as there is no OnRemove controller, the OnChange takes care of `vmi.DeletionTimestamp != nil `
+	// Note: Since there is no OnRemove controller, OnChange handles actual object deletions
+	// where Wrangler passes a nil object (along with instances having a DeletionTimestamp).
+	// Calling syncNADMappingConfigMap here is safe and ensures proper cleanup of related VMs.
 	if vmi == nil {
-		return vmi, nil
+		return vmi, h.syncNADMappingConfigMap()
 	}
 
 	// unrelated vmis, don't log anything

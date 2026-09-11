@@ -18,6 +18,7 @@ func getCommandAndFlag() (*cobra.Command, *flag.FlagSet) {
 	f.String(FlagManagementNetwork, "", "")
 	f.String(FlagNodeIPCIDR, "", "")
 	f.Bool(FlagDisableVmiController, false, "")
+	f.Bool(FlagDisableHostnameLookup, false, "")
 	f.Bool(FlagShowFullHelpOnError, false, "")
 	f.StringSlice(FlagCloudProviderControllers, []string{}, "")
 	f.StringSlice(FlagNodeExcludeIPRanges, []string{}, "")
@@ -49,6 +50,9 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 		}
 		if expected.lenNodeIPCIDRPPrefixes != len(actual.GetNodeIPCIDRPrefixes()) {
 			return fmt.Errorf(mismatch, "lenNodeIPCIDRPPrefixes", expected.lenNodeIPCIDRPPrefixes, len(actual.GetNodeIPCIDRPrefixes()))
+		}
+		if expected.config.DisableHostnameLookup != actual.DisableHostnameLookup {
+			return fmt.Errorf(mismatch, "DisableHostnameLookup", expected.config.DisableHostnameLookup, actual.DisableHostnameLookup)
 		}
 		return nil
 	}
