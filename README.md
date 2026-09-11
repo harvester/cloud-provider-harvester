@@ -4,25 +4,20 @@ Harvester Cloud Provider
 [![Go Report Card](https://goreportcard.com/badge/github.com/harvester/cloud-provider-harvester)](https://goreportcard.com/report/github.com/harvester/cloud-provider-harvester)
 [![Releases](https://img.shields.io/github/release/harvester/cloud-provider-harvester/all.svg)](https://github.com/harvester/cloud-provider-harvester/releases)
 
-Harvester Cloud Provider implements the Kubernetes Cloud Controller Manager and makes Harvester a Kubernetes cloud provider.
+Harvester Cloud Provider implements the Kubernetes Cloud Controller Manager and makes Harvester a Kubernetes cloud provider. See [Introduction](https://docs.harvesterhci.io/v1.9/rancher/cloud-provider#introduction).
 
 ## Manifests and Deploying
-Before deploying the Harvester cloud provider, your Kubernetes should be configured to allow external cloud providers.<br>
-The ./manifests folder contains useful YAML manifests to use for deploying and developing the Harvester Cloud provider. The simply YAML creates a Deployment using the rancher/harvester-cloud-provider container.<br>
-It's recommended to deploy the Harvester cloud provider at the same time when spin up the Kubernetes cluster using the Harvester node driver.<br>
 
-### Deploy in the RKE
-- Select the external cloud provider option.
+Before deploying the Harvester cloud provider, your Kubernetes should be configured to allow external cloud providers. See [Deploying](https://docs.harvesterhci.io/v1.9/rancher/cloud-provider#deploying).
 
-  ![](doc/image/rke-cloud-provider.png)
+The ./manifests folder contains useful YAML manifests to use for deploying and developing the Harvester Cloud provider. The simply YAML creates a Deployment using the rancher/harvester-cloud-provider container.
 
-- Generate addon configuration and add it in the rke yaml.
-  ```
-  # depend on kubectl to operate the Harvester
-  ./deploy/generate_kubeconfig.sh <serviceaccount name> <namespace>
-  ```
+It's recommended to deploy the Harvester cloud provider at the same time when spin up the Kubernetes cluster using the Harvester node driver.
+
+
 ### Deploy in the RKE2
-Select the `harvester` cloud provider, and the node driver will help deploy both the CSI driver and CCM automatically.
+
+On Rancher Manager, when create a new guest cluster, it defaults to the `harvester` cloud provider, and the node driver will help deploy both the CSI driver and CCM automatically. See [Deploying to the RKE2 Cluster with Harvester Node Driver](https://docs.harvesterhci.io/v1.9/rancher/cloud-provider#deploying-to-the-rke2-cluster-with-harvester-node-driver)
 
 ![](doc/image/rke2-cloud-provider.png)
 
@@ -59,13 +54,19 @@ https://github.com/harvester/charts/tree/master/charts/harvester-cloud-provider
 
 For more information, see [Chart README](https://github.com/harvester/charts/blob/master/README.md).
 
-This chart targets to integrate with Rancher Manager, see [Harvester Cloud Provider](https://docs.harvesterhci.io/v1.6/rancher/cloud-provider).
+This chart targets to integrate with Rancher Manager, see [Harvester Cloud Provider](https://docs.harvesterhci.io/v1.9/rancher/cloud-provider).
 
 ## License
-Copyright (c) 2021 Rancher Labs, Inc.
+Copyright (c) 2026 [SUSE, LLC.](https://www.suse.com/)
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-http://www.apache.org/licenses/LICENSE-2.0
+[http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0)
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
