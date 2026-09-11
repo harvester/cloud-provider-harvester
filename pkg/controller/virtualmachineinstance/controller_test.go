@@ -2,6 +2,7 @@ package virtualmachineinstance
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -596,7 +597,7 @@ func TestOnVmiChanged_LegacyHostnameLookup(t *testing.T) {
 		expectedAnnotatedNode string
 	}{
 		{
-			name:           "1. agent not ready (condition false)",
+			name:           "0. agent not ready (condition false)",
 			guestOsInfoErr: nil,
 			vmiModifier: func(v *kubevirtv1.VirtualMachineInstance) {
 				v.Status.Conditions = []kubevirtv1.VirtualMachineInstanceCondition{
@@ -611,6 +612,16 @@ func TestOnVmiChanged_LegacyHostnameLookup(t *testing.T) {
 			},
 			expectError:   true,
 			errorContains: "guest agent is not connected",
+		},
+		{
+			name:           "1. agent ready, but returns error",
+			guestOsInfoRet: kubevirtv1.VirtualMachineInstanceGuestAgentInfo{},
+			guestOsInfoErr: fmt.Errorf("a mocked GuestOsInfo error"),
+			initialNodes: map[string]*corev1.Node{
+				targetNodeName: {ObjectMeta: metav1.ObjectMeta{Name: targetNodeName}},
+			},
+			expectError:   true,
+			errorContains: "a mocked GuestOsInfo error",
 		},
 		{
 			name:           "2. agent ready, but returns empty hostname",

@@ -216,6 +216,45 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "Explicit DisableHostnameLookup true",
+			inputFlags: map[string]interface{}{
+				FlagDisableHostnameLookup: "true",
+			},
+			wantErr: false,
+			expected: expectedResult{
+				config: config.Config{
+					DisableHostnameLookup: true,
+					// Other fields remain zero-valued
+				},
+			},
+		},
+		{
+			name: "Explicit DisableHostnameLookup false",
+			inputFlags: map[string]interface{}{
+				FlagDisableHostnameLookup: "false",
+			},
+			wantErr: false,
+			expected: expectedResult{
+				config: config.Config{
+					DisableHostnameLookup: false,
+					// Other fields remain zero-valued
+				},
+			},
+		},
+		{
+			name: "Explicit DisableHostnameLookup invalid value, defaults to false",
+			inputFlags: map[string]interface{}{
+				FlagDisableHostnameLookup: "invalid",
+			},
+			wantErr: false,
+			expected: expectedResult{
+				config: config.Config{
+					DisableHostnameLookup: false,
+					// Other fields remain zero-valued
+				},
+			},
+		},
+		{
 			name:       "No input flag",
 			inputFlags: map[string]interface{}{},
 			wantErr:    false,
