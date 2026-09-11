@@ -51,7 +51,8 @@ func GetCommonVMINADs(vmis []*kubevirtv1.VirtualMachineInstance) map[string]stri
 	// Strip VMIs that are not Running or have no guest-agent interface data.
 	active := make([]kubevirtv1.VirtualMachineInstance, 0, len(vmis))
 	for _, vmi := range vmis {
-		if vmi == nil {
+		// if vmi is on deletion, filter it
+		if vmi == nil || vmi.DeletionTimestamp != nil {
 			continue
 		}
 		if IsRunning(vmi) && IsMigrationCompleted(vmi) && len(vmi.Status.Interfaces) > 0 {

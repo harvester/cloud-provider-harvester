@@ -18,7 +18,6 @@ import (
 type NodeCache struct {
 	lock  sync.Mutex
 	nodes map[string]*v1.Node
-	err   error
 }
 
 func NewNodeCache(initialNodes map[string]*v1.Node) *NodeCache {
@@ -40,9 +39,6 @@ func NewNodeCache(initialNodes map[string]*v1.Node) *NodeCache {
 func (f *NodeCache) Get(name string) (*v1.Node, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-	if f.err != nil {
-		return nil, f.err
-	}
 	node, ok := f.nodes[name]
 	if !ok {
 		return nil, apierrors.NewNotFound(schema.GroupResource{Resource: "nodes"}, name)
@@ -53,9 +49,6 @@ func (f *NodeCache) Get(name string) (*v1.Node, error) {
 func (f *NodeCache) List(selector labels.Selector) ([]*v1.Node, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-	if f.err != nil {
-		return nil, f.err
-	}
 	var result []*v1.Node
 	for _, node := range f.nodes {
 		if selector.Matches(labels.Set(node.Labels)) {
@@ -124,10 +117,11 @@ func (f *NodeClient) Get(name string, opts metav1.GetOptions) (*v1.Node, error) 
 }
 
 func (f *NodeClient) List(opts metav1.ListOptions) (*v1.NodeList, error) {
-	nodes, err := f.cache.List(labels.Everything())
+	selector, err := labels.Parse(opts.LabelSelector)
 	if err != nil {
 		return nil, err
 	}
+	nodes, err := f.cache.List(selector)
 	items := make([]v1.Node, len(nodes))
 	for i, node := range nodes {
 		items[i] = *node
