@@ -92,7 +92,7 @@ func (f *NodeCache) Delete(name string, _ *metav1.DeleteOptions) error {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	if _, ok := f.nodes[name]; !ok {
-		return nil
+		return apierrors.NewNotFound(schema.GroupResource{Resource: "nodes"}, name)
 	}
 	delete(f.nodes, name)
 	return nil
@@ -104,7 +104,13 @@ func (f *NodeCache) DeleteCollection(_ *metav1.DeleteOptions, _ metav1.ListOptio
 func (f *NodeCache) Watch(_ metav1.ListOptions) (watch.Interface, error) {
 	return nil, fmt.Errorf("implement me")
 }
+
 func (f *NodeCache) Patch(name string, _ types.PatchType, _ []byte, _ ...string) (*v1.Node, error) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	if _, ok := f.nodes[name]; !ok {
+		return nil, apierrors.NewNotFound(schema.GroupResource{Resource: "nodes"}, name)
+	}
 	return nil, fmt.Errorf("implement me")
 }
 
