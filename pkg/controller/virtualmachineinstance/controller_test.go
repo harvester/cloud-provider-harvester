@@ -2,6 +2,7 @@ package virtualmachineinstance
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -891,4 +892,122 @@ func TestOnVmiChanged_ReSyncPatchCases(t *testing.T) {
 			t.Fatalf("expected NotFound error, got: %v", err)
 		}
 	})
+}
+
+func newNADMappingConfigMap(mapping map[string]string) *corev1.ConfigMap {
+	data, _ := json.Marshal(mapping)
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      utils.ConfigMapNADMapping,
+			Namespace: metav1.NamespaceSystem,
+		},
+		Data: map[string]string{
+			utils.ConfigMapKeyNADMapping: string(data),
+		},
+	}
+}
+
+func TestOnVmiChangedNetworkMapping(t *testing.T) {
+	namespace := "default"
+	clusterName := "test-cluster"
+
+	origClusterName := cfg.GetConfig().ClusterName
+	cfg.GetConfig().ClusterName = clusterName
+	defer func() { cfg.GetConfig().ClusterName = origClusterName }()
+
+	harvesterVMI := &kubevirtv1.VirtualMachineInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "vmi-harvester",
+			Namespace: namespace,
+			Labels: map[string]string{
+				utils.LabelKeyGuestClusterNameOnVM:           clusterName,
+				utils.HarvesterLabelKeyVirtualMachineCreator: utils.HarvesterVirtualMachineCreatorNodeDriver,
+			},
+		},
+	}
+
+	tests := []struct {
+		name        string
+		vmi         *kubevirtv1.VirtualMachineInstance
+		initialVMIs []*kubevirtv1.VirtualMachineInstance
+		expectError bool
+	}{
+		{
+			name:        "1. vmi is nil (deletion event), triggers sync successfully",
+			vmi:         nil,
+			initialVMIs: []*kubevirtv1.VirtualMachineInstance{},
+			expectError: false,
+		},
+		{
+			name: "2. vmi in different namespace is ignored",
+			vmi: &kubevirtv1.VirtualMachineInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "vmi-other",
+					Namespace: "other-namespace",
+				},
+			},
+			initialVMIs: []*kubevirtv1.VirtualMachineInstance{},
+			expectError: false,
+		},
+		{
+			name: "3. vmi not created by harvester creator is ignored",
+			vmi: &kubevirtv1.VirtualMachineInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "vmi-manual",
+					Namespace: namespace,
+					Labels: map[string]string{
+						utils.LabelKeyGuestClusterNameOnVM: clusterName,
+					},
+				},
+			},
+			initialVMIs: []*kubevirtv1.VirtualMachineInstance{},
+			expectError: false,
+		},
+		{
+			name:        "4. valid harvester vmi triggers sync and updates configmap",
+			vmi:         harvesterVMI,
+			initialVMIs: []*kubevirtv1.VirtualMachineInstance{harvesterVMI},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			vmiCache := fakeclients.NewVMICache(tc.initialVMIs, nil)
+			cmCache := fakeclients.NewConfigMapCache(newNADMappingConfigMap(make(map[string]string)), nil)
+			cmClient := fakeclients.NewConfigMapClient(cmCache, nil)
+
+			h := &Handler{
+				namespace:       namespace,
+				vmiCache:        vmiCache,
+				configMapClient: cmClient,
+			}
+
+			_, err := h.OnVmiChangedNetworkMapping("", tc.vmi)
+
+			if tc.expectError {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("expected no error, got: %v", err)
+				}
+
+				// For non-ignored cases, verify that the NAD mapping ConfigMap was synchronized in kube-system
+				if tc.vmi == nil || (tc.vmi.Namespace == namespace && utils.IsVmiCreatedFromHarvesterCreator(tc.vmi)) {
+					cm, findErr := cmClient.Get(metav1.NamespaceSystem, utils.ConfigMapNADMapping, metav1.GetOptions{})
+					if findErr != nil {
+						t.Fatalf("unexpected error getting configmap: %v", findErr)
+					}
+					if cm == nil {
+						t.Fatalf("expected configmap to be created, got nil")
+					}
+					if _, ok := cm.Data[utils.ConfigMapKeyNADMapping]; !ok {
+						t.Fatalf("expected configmap data to contain key %s", utils.ConfigMapKeyNADMapping)
+					}
+				}
+			}
+		})
+	}
 }
