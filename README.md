@@ -1,19 +1,31 @@
 Harvester Cloud Provider
 ==========================
-[![Build Status](https://drone-publish.rancher.io/api/badges/harvester/cloud-provider-harvester/status.svg)](https://drone-publish.rancher.io/harvester/cloud-provider-harvester)
-[![Go Report Card](https://goreportcard.com/badge/github.com/harvester/cloud-provider-harvester)](https://goreportcard.com/report/github.com/harvester/cloud-provider-harvester)
 [![Releases](https://img.shields.io/github/release/harvester/cloud-provider-harvester/all.svg)](https://github.com/harvester/cloud-provider-harvester/releases)
 
 Harvester Cloud Provider implements the Kubernetes Cloud Controller Manager and makes Harvester a Kubernetes cloud provider. See [Introduction](https://docs.harvesterhci.io/v1.9/rancher/cloud-provider#introduction).
 
-## Manifests and Deploying
+## Manifests and Deployment
 
-Before deploying the Harvester cloud provider, your Kubernetes should be configured to allow external cloud providers. See [Deploying](https://docs.harvesterhci.io/v1.9/rancher/cloud-provider#deploying).
+Before deploying the Harvester Cloud Provider, ensure your Kubernetes cluster is configured for external cloud providers. For details, see the [Harvester Deployment Guide: harvester-cloud-provider deploying](https://docs.harvesterhci.io/v1.9/rancher/cloud-provider#deploying).
 
-The ./manifests folder contains useful YAML manifests to use for deploying and developing the Harvester Cloud provider. The simply YAML creates a Deployment using the rancher/harvester-cloud-provider container.
+The `./deploy/manifests` folder contains a limited set of raw YAML manifests intended solely for lightweight development and testing. Because these manifests are not always synchronized with the full Helm chart, it is strongly recommended to install using the official Helm chart.
 
-It's recommended to deploy the Harvester cloud provider at the same time when spin up the Kubernetes cluster using the Harvester node driver.
+### Helm Chart Repository
 
+The official charts are hosted at the [Harvester Helm Chart Repository](https://charts.harvesterhci.io).
+
+To find the latest version and download a release manully:
+
+1. Check the current version in the [Chart.yaml source](https://github.com/harvester/charts/blob/1779f1746118a9c27ab3560a253d00da82ed9ca8/charts/harvester-cloud-provider/Chart.yaml#L21).
+
+2. Download the release archive for your target version (replace both instances of `0.2.15` with your target version to construct the valid chart URL):
+    * [https://github.com/harvester/charts/releases/download/harvester-cloud-provider-0.2.15/harvester-cloud-provider-0.2.15.tgz](https://github.com/harvester/charts/releases/download/harvester-cloud-provider-0.2.15/harvester-cloud-provider-0.2.15.tgz)
+
+### Requirements
+
+It is recommended to deploy the Harvester Cloud Provider concurrently when provisioning your Kubernetes cluster via the [Harvester Node Driver](https://docs.harvesterhci.io/v1.9/rancher/node/node-driver).
+
+Because the cloud provider relies on the Harvester cluster to fetch VM metadata, populate guest cluster node info, and support LoadBalancer services, your guest cluster must be provisioned using the Harvester node driver. This can be accomplished via Rancher's automated guest cluster deployment or through manual cluster deployment and registration.
 
 ### Deploy in the RKE2
 
@@ -21,32 +33,29 @@ On Rancher Manager, when create a new guest cluster, it defaults to the `harvest
 
 ![](doc/image/rke2-cloud-provider.png)
 
-### Helm chart
-To find the helm chart in the [harvester helm chart repo](https://charts.harvesterhci.io).
-
 ## How to Contribute
 
 General guide is on [Harvester Developer Guide](https://github.com/harvester/harvester/blob/master/DEVELOPER_GUIDE.md).
 
-### Build
+### Build Image
 
 1. Run `make ci` on the source code
 
-```
-/go/src/github.com/harvester/cloud-provider-harvester$ make ci
-```
+    ```
+    /go/src/github.com/harvester/cloud-provider-harvester$ make ci
+    ```
 
 1. A successful run will generate following container images.
 
-```
-REPOSITORY                                                                                           TAG                                         IMAGE ID       CREATED         SIZE
-rancher/harvester-cloud-provider                                                                     d2fb13d3-amd64                              903acc7ba945   2 hours ago     133MB
+    ```
+    REPOSITORY                                                                                           TAG                                         IMAGE ID       CREATED         SIZE
+    rancher/harvester-cloud-provider                                                                     d2fb13d3-amd64                              903acc7ba945   2 hours ago     133MB
 
-```
+    ```
 
-1. Push or upload the new image to the running [guest cluster](https://docs.harvesterhci.io/v1.6/rancher/node/rke2-cluster#create-rke2-kubernetes-cluster), replace it to the deployment and test your change.
+1. Push or upload the new image to the running [guest cluster](https://docs.harvesterhci.io/v1.9/rancher/node/rke2-cluster#create-rke2-kubernetes-cluster), replace it to the deployment and test your change.
 
-### Chart
+### Chart Development
 
 The chart definition is managed on a central repo `https://github.com/harvester/charts`. Changes needs to be sent to it.
 
@@ -54,9 +63,10 @@ https://github.com/harvester/charts/tree/master/charts/harvester-cloud-provider
 
 For more information, see [Chart README](https://github.com/harvester/charts/blob/master/README.md).
 
-This chart targets to integrate with Rancher Manager, see [Harvester Cloud Provider](https://docs.harvesterhci.io/v1.9/rancher/cloud-provider).
+This chart targets to integrate with Rancher Manager and RKE2, see [Harvester Cloud Provider](https://docs.harvesterhci.io/v1.9/rancher/cloud-provider).
 
 ## License
+
 Copyright (c) 2026 [SUSE, LLC.](https://www.suse.com/)
 
 Licensed under the Apache License, Version 2.0 (the "License");
