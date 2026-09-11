@@ -87,20 +87,18 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 }
 
 // getVM retrieves the Harvester VirtualMachine corresponding to the given guest node.
-// It prioritizes the explicitly persisted mapping stored in the node annotation
-// (written by the controller during hostname resolution), falling back to
-// a direct name match for standard RKE2/K3s deployments. For non-standard
-// deployments utilizing custom hostnames, the annotation bridges the gap, ensuring
-// reliable lookups without relying on ephemeral in-memory maps or expensive guest agent calls.
-//
-// For customized VMs, this function lazily relies on the VMI controller having
-// asynchronously fetched the GuestOS info, matched the guest hostname to the node name,
-// and annotated the node. The instanceManager does not attempt to guess or invoke
-// alternative fallback lookups on its own.
+// Unless DisableHostnameLookup is enabled, it prioritizes the explicitly persisted
+// mapping stored in the node annotation (written by the controller during hostname resolution),
+// falling back to a direct name match for standard RKE2/K3s deployments. When
+// DisableHostnameLookup is true, annotation-based hostname resolution is bypassed,
+// enforcing a direct match using node.Name.
 func (i *instanceManager) getVM(node *v1.Node) (*kubevirtv1.VirtualMachine, error) {
-	vmiName := node.Annotations[utils.AnnotationVMNameOfGuestClusterNode]
-	if vmiName == "" {
-		vmiName = node.Name
+	vmiName := node.Name
+	if !config.GetConfig().DisableHostnameLookup {
+		savedName := node.Annotations[utils.AnnotationVMNameOfGuestClusterNode]
+		if savedName != "" {
+			vmiName = savedName
+		}
 	}
 
 	return i.vmClient.Get(i.namespace, vmiName, metav1.GetOptions{})

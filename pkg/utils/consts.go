@@ -106,6 +106,9 @@ const (
 
 	FlagNodeExcludeIPRanges = "node-exclude-ip-ranges"
 
+	// disable the usage of VM hostname lookup to match VM/node, avoiding error-prone fallback operations
+	FlagDisableHostnameLookup = "disable-hostname-lookup"
+
 	// LabelKeyGuestClusterNameOnVM is the label applied to VMs that belong to a guest cluster.
 	// Value is the guest cluster name
 	LabelKeyGuestClusterNameOnVM = "guestcluster.harvesterhci.io/name"
