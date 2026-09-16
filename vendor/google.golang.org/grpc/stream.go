@@ -201,15 +201,6 @@ func endOfClientStream(cc *ClientConn, err error, opts ...CallOption) {
 	}
 }
 
-// clientInterceptor is structurally identical to the ClientInterceptor defined
-// in internal/xds/httpfilter/httpfilter.go. It is defined locally here so that
-// we can type-assert the generic Interceptor field in iresolver.RPCConfig
-// without introducing a dependency on xDS packages.
-type clientInterceptor interface {
-	NewStream(ctx context.Context, ri iresolver.RPCInfo, newStream func(ctx context.Context, opts ...CallOption) (ClientStream, error), opts ...CallOption) (ClientStream, error)
-	Close()
-}
-
 func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, method string, opts ...CallOption) (_ ClientStream, err error) {
 	if channelz.IsOn() {
 		cc.incrCallsStarted()
@@ -253,11 +244,8 @@ func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 
 	mc := &emptyMethodConfig
 	var onCommit func()
-	newStream := func(ctx context.Context, filterOpts ...CallOption) (ClientStream, error) {
-		if filterOpts != nil {
-			opts = combine(opts, filterOpts)
-		}
-		return newClientStreamWithParams(ctx, desc, cc, method, mc, onCommit, nameResolutionDelayed, opts...)
+	newStream := func(ctx context.Context, done func()) (iresolver.ClientStream, error) {
+		return newClientStreamWithParams(ctx, desc, cc, method, mc, onCommit, done, nameResolutionDelayed, opts...)
 	}
 
 	rpcInfo := iresolver.RPCInfo{Context: ctx, Method: method}
@@ -282,24 +270,20 @@ func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 		if rpcConfig.Interceptor != nil {
 			rpcInfo.Context = nil
 			ns := newStream
-			if interceptor, ok := rpcConfig.Interceptor.(clientInterceptor); ok {
-				newStream = func(ctx context.Context, filterOpts ...CallOption) (ClientStream, error) {
-					cs, err := interceptor.NewStream(ctx, rpcInfo, ns, filterOpts...)
-					if err != nil {
-						return nil, toRPCErr(err)
-					}
-					return cs, nil
+			newStream = func(ctx context.Context, done func()) (iresolver.ClientStream, error) {
+				cs, err := rpcConfig.Interceptor.NewStream(ctx, rpcInfo, done, ns)
+				if err != nil {
+					return nil, toRPCErr(err)
 				}
-			} else {
-				return nil, status.Errorf(codes.Internal, "invalid client interceptor type %T", rpcConfig.Interceptor)
+				return cs, nil
 			}
 		}
 	}
 
-	return newStream(ctx)
+	return newStream(ctx, func() {})
 }
 
-func newClientStreamWithParams(ctx context.Context, desc *StreamDesc, cc *ClientConn, method string, mc *serviceconfig.MethodConfig, onCommit func(), nameResolutionDelayed bool, opts ...CallOption) (_ ClientStream, err error) {
+func newClientStreamWithParams(ctx context.Context, desc *StreamDesc, cc *ClientConn, method string, mc *serviceconfig.MethodConfig, onCommit, doneFunc func(), nameResolutionDelayed bool, opts ...CallOption) (_ iresolver.ClientStream, err error) {
 	callInfo := defaultCallInfo()
 	if mc.WaitForReady != nil {
 		callInfo.failFast = !*mc.WaitForReady
@@ -337,6 +321,7 @@ func newClientStreamWithParams(ctx context.Context, desc *StreamDesc, cc *Client
 		Host:           cc.authority,
 		Method:         method,
 		ContentSubtype: callInfo.contentSubtype,
+		DoneFunc:       doneFunc,
 		Authority:      callInfo.authority,
 	}
 	if allowed := callInfo.acceptedResponseCompressors; len(allowed) > 0 {
