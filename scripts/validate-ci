@@ -1,0 +1,28 @@
+#!/bin/bash
+set -e
+
+cd $(dirname $0)/..
+
+# HCP has a very small set of types to run `make generate`.
+# Use content hashing of pkg/generated files to verify if `make generate` introduces any changes.
+# Avoid `git init` here to prevent workspace pollution, cleanup risks, and nested repository conflicts.
+
+# Capture hash before
+HASH_BEFORE=$(find pkg/generated -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum)
+
+# Run generation
+go generate
+
+# Capture hash after
+HASH_AFTER=$(find pkg/generated -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum)
+
+echo "The sha256sum of pkg/generated, before: $HASH_BEFORE, after $HASH_AFTER" >&2
+
+if [ "$HASH_BEFORE" = "$HASH_AFTER" ]; then
+    echo "No changes detected in pkg/generated." >&2
+else
+    echo "Changes detected in pkg/generated!" >&2
+    echo "Hint: run 'make generate' and commit the changes." >&2
+    exit 1
+fi
+
