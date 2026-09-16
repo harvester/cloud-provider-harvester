@@ -64,7 +64,7 @@ DOCKER_BUILD = docker build \
 	--build-arg MK_HOST_ARCH \
 	-f $(ROOT)/Dockerfile $(ROOT)
 
-.PHONY: build ci default package release test validate arm gen-version-env gen-version-env-debug clean-all
+.PHONY: build ci default package release test validate validate-ci arm gen-version-env gen-version-env-debug clean-all
 
 
 # ---- Directories ----
@@ -117,6 +117,11 @@ generate: gen-version-env
 	$(DOCKER_BUILD) --target generate-output \
 	    --output type=local,dest=$(ROOT)
 
+# ---- validate-ci ----
+validate-ci: gen-version-env
+	$(BANNER)
+	$(DOCKER_BUILD) --target validate-ci
+
 clean-all:
 	$(BANNER)
 	@docker rmi -f $(MK_VALIDATE_CACHE_IMAGE) $(MK_TEST_CACHE_IMAGE) || true
@@ -132,7 +137,7 @@ export VERSION
 # Simulate a GitHub Actions release or RC locally:
 #   TAG="v0.2.8" GIT_TAG="v0.2.8" make ci
 #   TAG="v0.2.8-rc1" GIT_TAG="v0.2.8-rc1" make ci
-ci: build test validate package
+ci: build test validate validate-ci package
 
 default: build package
 
