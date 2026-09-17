@@ -56,6 +56,12 @@ type Config struct {
 	// It is used to quickly filter out specific IPs or subnets during the node
 	// address discovery process.
 	internalNodeExcludeIPPrefixes []netip.Prefix
+
+	// DisableHostnameLookup controls whether the cloud provider attempts to
+	// look up the VM's hostname to match it with a Kubernetes Node.
+	// When set to true, this redundant and error-prone fallback operation
+	// is disabled, enforcing a strict VM-name to Node-name match.
+	DisableHostnameLookup bool
 }
 
 // GetConfig returns a pointer to the global configuration instance.
