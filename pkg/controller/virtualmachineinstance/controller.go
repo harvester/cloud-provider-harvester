@@ -94,7 +94,13 @@ type Handler struct {
 //     the VMI UID to automatically invalidate stale entries across reboots/recreations
 //     and avoid expensive GuestOsInfo calls).
 func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance) (*kubevirtv1.VirtualMachineInstance, error) {
-	if vmi == nil || vmi.DeletionTimestamp != nil {
+	if vmi == nil {
+		return vmi, nil
+	}
+
+	// remove the cached data
+	if vmi.DeletionTimestamp != nil {
+		h.resetCache(vmi)
 		return vmi, nil
 	}
 
@@ -145,6 +151,7 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 	}
 
 	hostname := vmi.Name
+	hostnameFetched := false
 
 	switch {
 	// Found in local cache map
@@ -194,6 +201,7 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 			// desynchronization issues in the Kubernetes context since the node name mapping
 			// is already permanently bound.
 			h.storeHostnameToVMIToHostnameMap(vmi, hostname)
+			hostnameFetched = true
 		}
 	}
 
@@ -205,8 +213,10 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 	}
 
 	// for instance.go to use
-	logrus.Infof("store [node:%s, vmi:%s] for quick lookup", hostname, vmi.Name)
-	h.nodeToVMName.Store(hostname, vmi.Name)
+	if hostnameFetched {
+		logrus.Infof("store [node:%s, vmi:%s] for quick lookup", hostname, vmi.Name)
+		h.nodeToVMName.Store(hostname, vmi.Name)
+	}
 
 	return h.syncVMIAndNodeTopology(vmi, hostname)
 }
@@ -356,4 +366,18 @@ func (h *Handler) storeHostnameToVMIToHostnameMap(vmi *kubevirtv1.VirtualMachine
 		hostname: hostname,
 		uid:      vmi.UID,
 	})
+}
+
+func (h *Handler) resetCache(vmi *kubevirtv1.VirtualMachineInstance) {
+	if cfg.GetConfig().DisableHostnameLookup {
+		return
+	}
+	if val, ok := h.vmiToHostname.Load(vmi.Name); ok {
+		if info, ok := val.(vmiCacheInfo); ok && info.uid == vmi.UID {
+			// remove vmi from [vmi, hostname] map
+			h.vmiToHostname.Delete(vmi.Name)
+			// remove [node(hostnme), vmi] map
+			h.nodeToVMName.Delete(info.hostname)
+		}
+	}
 }

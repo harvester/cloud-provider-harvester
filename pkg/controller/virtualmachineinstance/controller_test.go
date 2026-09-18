@@ -3,6 +3,7 @@ package virtualmachineinstance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -36,7 +37,7 @@ func TestTopologyChanged(t *testing.T) {
 		corev1.LabelTopologyZone:   "zone-2",
 	}
 
-	// expected result is `ture`
+	// expected result is `true`
 	if compareTopology(a, b) != true {
 		t.Fatalf("expected topologies do no change, but get changed")
 	}
@@ -667,13 +668,46 @@ func TestOnVmiChanged_LocalLookupMapUpdates(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected no error on cache hit, got: %v", err)
 		}
+	})
 
-		if _, ok := h.getVMFromNodeToVMNameMap(targetNodeName); !ok {
-			t.Fatalf("expected to find node %s in nodeToVMName map", targetNodeName)
+	t.Run("2. Local lookup map hits with matching UID avoids GuestOsInfo call, and hit the expected conflict error", func(t *testing.T) {
+		vmi := baseVMI.DeepCopy()
+		h := &Handler{
+			namespace: namespace,
+			nodeCache: fakeclients.NewNodeCache(initialNodes),
+			kubevirtClient: &FakeKubevirtClient{
+				VMIHandler: func(ns string) kubecli.VirtualMachineInstanceInterface {
+					return &FakeVMIInterface{
+						GuestOsInfoFunc: func(ctx context.Context, name string) (kubevirtv1.VirtualMachineInstanceGuestAgentInfo, error) {
+							t.Fatalf("unexpected call to GuestOsInfo on valid cache hit")
+							return kubevirtv1.VirtualMachineInstanceGuestAgentInfo{}, fmt.Errorf("should not be called")
+						},
+					}
+				},
+			},
+			nodeToVMName:  &sync.Map{},
+			vmiToHostname: &sync.Map{},
+		}
+
+		// Pre-populate cache with matching current UID
+		h.vmiToHostname.Store(vmiName, vmiCacheInfo{
+			hostname: targetNodeName,
+			uid:      vmiUID,
+		})
+
+		// node already points to others
+		h.nodeToVMName.Store(targetNodeName, "another-vm")
+
+		_, err := h.OnVmiChanged("", vmi)
+		if err == nil {
+			t.Fatalf("expected error on conflict, got nil")
+		}
+		if !errors.Is(err, errNodeToVMConflict) {
+			t.Fatalf("expected error is %v, got %v", errNodeToVMConflict, err)
 		}
 	})
 
-	t.Run("1. Local lookup map hits UID mismatch and updates", func(t *testing.T) {
+	t.Run("3. Local lookup map hits UID mismatch and updates", func(t *testing.T) {
 		vmi := baseVMI.DeepCopy()
 		guestAgentCalled := false
 
@@ -722,6 +756,86 @@ func TestOnVmiChanged_LocalLookupMapUpdates(t *testing.T) {
 			}
 		} else {
 			t.Fatalf("expected cache to have an entry for vmi")
+		}
+	})
+}
+
+func TestOnVmiChanged_ResetCache(t *testing.T) {
+	namespace := "default"
+	vmiName := "vmi-example"
+	nodeName := "target-node"
+	vmiUID := types.UID("test-uid-123")
+
+	origDisableLookup := cfg.GetConfig().DisableHostnameLookup
+	cfg.GetConfig().DisableHostnameLookup = false
+	defer func() { cfg.GetConfig().DisableHostnameLookup = origDisableLookup }()
+
+	now := metav1.Now()
+	baseVMI := &kubevirtv1.VirtualMachineInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              vmiName,
+			Namespace:         namespace,
+			UID:               vmiUID,
+			DeletionTimestamp: &now,
+		},
+	}
+
+	t.Run("successful cache reset on VMI deletion with matching UID", func(t *testing.T) {
+		h := &Handler{
+			namespace:     namespace,
+			vmiToHostname: &sync.Map{},
+			nodeToVMName:  &sync.Map{},
+		}
+
+		// Pre-populate both caches
+		h.vmiToHostname.Store(vmiName, vmiCacheInfo{
+			hostname: nodeName,
+			uid:      vmiUID,
+		})
+		h.nodeToVMName.Store(nodeName, vmiName)
+
+		vmi := baseVMI.DeepCopy()
+		_, err := h.OnVmiChanged("", vmi)
+		if err != nil {
+			t.Fatalf("expected no error on cache reset, got: %v", err)
+		}
+
+		// Verify that both mapping entries were successfully deleted
+		if _, found := h.vmiToHostname.Load(vmiName); found {
+			t.Fatalf("expected vmiToHostname cache entry to be deleted, but it still exists")
+		}
+		if _, found := h.nodeToVMName.Load(nodeName); found {
+			t.Fatalf("expected nodeToVMName cache entry to be deleted, but it still exists")
+		}
+	})
+
+	t.Run("cache not reset on VMI deletion if UID mismatch", func(t *testing.T) {
+		h := &Handler{
+			namespace:     namespace,
+			vmiToHostname: &sync.Map{},
+			nodeToVMName:  &sync.Map{},
+		}
+
+		// Pre-populate with a different (stale) UID
+		staleUID := types.UID("stale-uid-456")
+		h.vmiToHostname.Store(vmiName, vmiCacheInfo{
+			hostname: nodeName,
+			uid:      staleUID,
+		})
+		h.nodeToVMName.Store(nodeName, vmiName)
+
+		vmi := baseVMI.DeepCopy() // has vmiUID, which does not match staleUID
+		_, err := h.OnVmiChanged("", vmi)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		// Verify that cache entries remain untouched due to the UID mismatch
+		if _, found := h.vmiToHostname.Load(vmiName); !found {
+			t.Fatalf("expected vmiToHostname cache entry to remain due to UID mismatch")
+		}
+		if _, found := h.nodeToVMName.Load(nodeName); !found {
+			t.Fatalf("expected nodeToVMName cache entry to remain due to UID mismatch")
 		}
 	})
 }
