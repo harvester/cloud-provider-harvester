@@ -24,8 +24,11 @@ func (f *VMICache) Get(namespace, name string) (*kubevirtv1.VirtualMachineInstan
 		return nil, f.err
 	}
 	for _, vmi := range f.vmis {
+		if vmi == nil {
+			continue
+		}
 		if vmi.Namespace == namespace && vmi.Name == name {
-			return vmi, nil
+			return vmi.DeepCopy(), nil
 		}
 	}
 	return nil, apierrors.NewNotFound(schema.GroupResource{Group: "kubevirt.io", Resource: "virtualmachineinstances"}, name)
@@ -37,13 +40,16 @@ func (f *VMICache) List(namespace string, selector labels.Selector) ([]*kubevirt
 	}
 	var result []*kubevirtv1.VirtualMachineInstance
 	for _, vmi := range f.vmis {
+		if vmi == nil {
+			continue
+		}
 		if namespace != "" && vmi.Namespace != namespace {
 			continue
 		}
 		if selector != nil && !selector.Matches(labels.Set(vmi.Labels)) {
 			continue
 		}
-		result = append(result, vmi)
+		result = append(result, vmi.DeepCopy())
 	}
 	return result, nil
 }
