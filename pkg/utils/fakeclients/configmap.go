@@ -1,6 +1,8 @@
 package fakeclients
 
 import (
+	"fmt"
+
 	"github.com/rancher/wrangler/v3/pkg/generic"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -13,7 +15,7 @@ import (
 )
 
 // ConfigMapCache is a minimal in-memory ConfigMapCache for use in unit tests.
-// only one configmap could be stored
+// Only one configmap can be stored.
 type ConfigMapCache struct {
 	cm  *v1.ConfigMap
 	err error
@@ -32,7 +34,7 @@ func (f *ConfigMapCache) Get(namespace, name string) (*v1.ConfigMap, error) {
 	if f.cm == nil || f.cm.Namespace != namespace || f.cm.Name != name {
 		return nil, apierrors.NewNotFound(schema.GroupResource{Resource: "configmaps"}, name)
 	}
-	return f.cm, nil
+	return f.cm.DeepCopy(), nil
 }
 
 func (f *ConfigMapCache) List(_ string, _ labels.Selector) ([]*v1.ConfigMap, error) {
@@ -67,7 +69,10 @@ func (f *ConfigMapClient) Create(cm *v1.ConfigMap) (*v1.ConfigMap, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	f.cache.cm = cm
+	if cm == nil {
+		return nil, fmt.Errorf("the input configmap is nil")
+	}
+	f.cache.cm = cm.DeepCopy()
 	return cm, nil
 }
 
@@ -75,13 +80,22 @@ func (f *ConfigMapClient) Update(cm *v1.ConfigMap) (*v1.ConfigMap, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	f.cache.cm = cm
+	if cm == nil {
+		return nil, fmt.Errorf("the input configmap is nil")
+	}
+	if f.cache.cm == nil || f.cache.cm.Namespace != cm.Namespace || f.cache.cm.Name != cm.Name {
+		return nil, apierrors.NewNotFound(schema.GroupResource{Resource: "configmaps"}, cm.Name)
+	}
+	f.cache.cm = cm.DeepCopy()
 	return cm, nil
 }
 
-func (f *ConfigMapClient) Delete(namesapce, name string, options *metav1.DeleteOptions) error {
+func (f *ConfigMapClient) Delete(namespace, name string, options *metav1.DeleteOptions) error {
 	if f.err != nil {
 		return f.err
+	}
+	if f.cache.cm == nil || f.cache.cm.Namespace != namespace || f.cache.cm.Name != name {
+		return apierrors.NewNotFound(schema.GroupResource{Resource: "configmaps"}, name)
 	}
 	f.cache.cm = nil
 	return nil

@@ -52,6 +52,9 @@ func (f *NodeCache) Get(name string) (*v1.Node, error) {
 }
 
 func (f *NodeCache) List(selector labels.Selector) ([]*v1.Node, error) {
+	if selector == nil {
+		selector = labels.Everything()
+	}
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	var result []*v1.Node
