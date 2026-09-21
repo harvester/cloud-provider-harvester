@@ -143,13 +143,21 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 			"namespace": vmi.Namespace,
 		}).WithError(err).Error("failed to get guest agent info, fallback to use vmi name as node name")
 	} else {
-		logrus.WithFields(logrus.Fields{
-			"name":      vmi.Name,
-			"namespace": vmi.Namespace,
-			"hostname":  guestAgentInfo.Hostname,
-		}).Info("get agent info success, using hostname as node name")
-		nodeName = guestAgentInfo.Hostname
-		h.nodeToVMName.Store(nodeName, vmi.Name)
+		if guestAgentInfo.Hostname != "" {
+			logrus.WithFields(logrus.Fields{
+				"name":      vmi.Name,
+				"namespace": vmi.Namespace,
+				"hostname":  guestAgentInfo.Hostname,
+			}).Info("get agent info success, using hostname as node name")
+			nodeName = guestAgentInfo.Hostname
+			h.nodeToVMName.Store(nodeName, vmi.Name)
+		} else {
+			logrus.WithFields(logrus.Fields{
+				"name":      vmi.Name,
+				"namespace": vmi.Namespace,
+				"hostname":  guestAgentInfo.Hostname,
+			}).Info("get agent info success, but hostname is empty, fallback to use vmi name as node name")
+		}
 	}
 
 	return h.syncVMIAndNodeTopology(vmi, nodeName)

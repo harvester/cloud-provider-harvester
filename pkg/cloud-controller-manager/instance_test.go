@@ -627,9 +627,10 @@ func Test_getNodeVMName(t *testing.T) {
 		initialMapData  map[string]string
 		nodeName        string
 		expectedRetName string
+		disableLookup   bool
 	}{
 		{
-			name: "Key exists in map, returns mapped VM name",
+			name: "1. Key exists in map, returns mapped VM name",
 			initialMapData: map[string]string{
 				"node-1": "vm-custom-1",
 			},
@@ -637,7 +638,7 @@ func Test_getNodeVMName(t *testing.T) {
 			expectedRetName: "vm-custom-1",
 		},
 		{
-			name: "Key exists in map with multiple entries, returns correct VM name",
+			name: "2. Key exists in map with multiple entries, returns correct VM name",
 			initialMapData: map[string]string{
 				"node-1": "vm-custom-1",
 				"node-2": "vm-custom-2",
@@ -646,10 +647,20 @@ func Test_getNodeVMName(t *testing.T) {
 			expectedRetName: "vm-custom-2",
 		},
 		{
-			name:            "Key does not exist in map, returns original node name",
+			name:            "3. Key does not exist in map, returns original node name",
 			initialMapData:  nil,
 			nodeName:        "node-3",
 			expectedRetName: "node-3",
+		},
+		{
+			name: "4. The hostname lookup is disabled, always returns node name",
+			initialMapData: map[string]string{
+				"node-4": "vm-custom-4",
+				"node-5": "vm-custom-5",
+			},
+			nodeName:        "node-4",
+			expectedRetName: "node-4",
+			disableLookup:   true,
 		},
 	}
 
@@ -658,8 +669,14 @@ func Test_getNodeVMName(t *testing.T) {
 			im := &instanceManager{
 				nodeToVMName: &sync.Map{},
 			}
+			// inject data anyway for test
 			for k, v := range tt.initialMapData {
 				im.nodeToVMName.Store(k, v)
+			}
+			if tt.disableLookup {
+				oldValue := config.GetConfig().DisableHostnameLookup
+				config.GetConfig().DisableHostnameLookup = true
+				defer func() { config.GetConfig().DisableHostnameLookup = oldValue }()
 			}
 
 			retName := im.getNodeVMName(tt.nodeName)

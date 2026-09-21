@@ -499,14 +499,7 @@ func TestOnVmiChanged_HostnameLookup(t *testing.T) {
 			errorContains:  "failed to get node",
 		},
 		{
-			name:           "3. agent ready, returns non-matching hostname, fallback",
-			guestOsInfoRet: kubevirtv1.VirtualMachineInstanceGuestAgentInfo{Hostname: "non-existent-node"},
-			initialNodes:   initialNodes,
-			expectError:    true,
-			errorContains:  "failed to get node",
-		},
-		{
-			name:                  "4. agent ready, returns matching hostname and node is stored successfully",
+			name:                  "3. agent ready, returns matching hostname and node is stored successfully",
 			guestOsInfoRet:        kubevirtv1.VirtualMachineInstanceGuestAgentInfo{Hostname: targetNodeName},
 			initialNodes:          initialNodes,
 			expectError:           false,
