@@ -26,6 +26,9 @@ type instanceManager struct {
 }
 
 func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bool, error) {
+	if node == nil {
+		return false, fmt.Errorf("node is nil")
+	}
 	if _, err := i.getVM(node); err != nil {
 		if !errors.IsNotFound(err) {
 			return false, err
@@ -36,6 +39,9 @@ func (i *instanceManager) InstanceExists(ctx context.Context, node *v1.Node) (bo
 }
 
 func (i *instanceManager) InstanceShutdown(ctx context.Context, node *v1.Node) (bool, error) {
+	if node == nil {
+		return false, fmt.Errorf("node is nil")
+	}
 	vm, err := i.getVM(node)
 	if err != nil {
 		return false, err
@@ -44,6 +50,9 @@ func (i *instanceManager) InstanceShutdown(ctx context.Context, node *v1.Node) (
 }
 
 func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (*cloudprovider.InstanceMetadata, error) {
+	if node == nil {
+		return nil, fmt.Errorf("node is nil")
+	}
 	vm, err := i.getVM(node)
 	if err != nil {
 		return nil, err
@@ -79,11 +88,17 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 }
 
 func (i *instanceManager) getVM(node *v1.Node) (*kubevirtv1.VirtualMachine, error) {
-	nodeName := node.Name
-	if vmName, ok := i.nodeToVMName.Load(nodeName); ok {
-		nodeName = vmName.(string)
+	return i.vmClient.Get(i.namespace, i.getNodeVMName(node.Name), metav1.GetOptions{})
+}
+
+func (i *instanceManager) getNodeVMName(nm string) string {
+	nodeName := nm
+	if !config.GetConfig().DisableHostnameLookup {
+		if vmName, ok := i.nodeToVMName.Load(nm); ok {
+			nodeName = vmName.(string)
+		}
 	}
-	return i.vmClient.Get(i.namespace, nodeName, metav1.GetOptions{})
+	return nodeName
 }
 
 /*
