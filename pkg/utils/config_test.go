@@ -18,6 +18,7 @@ func getCommandAndFlag() (*cobra.Command, *flag.FlagSet) {
 	f.String(FlagManagementNetwork, "", "")
 	f.String(FlagNodeIPCIDR, "", "")
 	f.Bool(FlagDisableVmiController, false, "")
+	f.Bool(FlagDisableHostnameLookup, false, "")
 	f.Bool(FlagShowFullHelpOnError, false, "")
 	f.StringSlice(FlagCloudProviderControllers, []string{}, "")
 	f.StringSlice(FlagNodeExcludeIPRanges, []string{}, "")
@@ -49,6 +50,9 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 		}
 		if expected.lenNodeIPCIDRPPrefixes != len(actual.GetNodeIPCIDRPrefixes()) {
 			return fmt.Errorf(mismatch, "lenNodeIPCIDRPPrefixes", expected.lenNodeIPCIDRPPrefixes, len(actual.GetNodeIPCIDRPrefixes()))
+		}
+		if expected.config.DisableHostnameLookup != actual.DisableHostnameLookup {
+			return fmt.Errorf(mismatch, "DisableHostnameLookup", expected.config.DisableHostnameLookup, actual.DisableHostnameLookup)
 		}
 		return nil
 	}
@@ -207,6 +211,45 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 			expected: expectedResult{
 				config: config.Config{
 					ClusterName: "",
+					// Other fields remain zero-valued
+				},
+			},
+		},
+		{
+			name: "Explicit DisableHostnameLookup true",
+			inputFlags: map[string]interface{}{
+				FlagDisableHostnameLookup: "true",
+			},
+			wantErr: false,
+			expected: expectedResult{
+				config: config.Config{
+					DisableHostnameLookup: true,
+					// Other fields remain zero-valued
+				},
+			},
+		},
+		{
+			name: "Explicit DisableHostnameLookup false",
+			inputFlags: map[string]interface{}{
+				FlagDisableHostnameLookup: "false",
+			},
+			wantErr: false,
+			expected: expectedResult{
+				config: config.Config{
+					DisableHostnameLookup: false,
+					// Other fields remain zero-valued
+				},
+			},
+		},
+		{
+			name: "Explicit DisableHostnameLookup invalid value, defaults to false",
+			inputFlags: map[string]interface{}{
+				FlagDisableHostnameLookup: "invalid",
+			},
+			wantErr: false,
+			expected: expectedResult{
+				config: config.Config{
+					DisableHostnameLookup: false,
 					// Other fields remain zero-valued
 				},
 			},

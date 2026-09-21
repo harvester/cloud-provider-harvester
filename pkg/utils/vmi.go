@@ -1,6 +1,7 @@
 package utils
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
@@ -104,4 +105,19 @@ func IsVmiCreatedFromHarvesterCreator(vmi *kubevirtv1.VirtualMachineInstance) bo
 // non-empty, non-default guest cluster name
 func IsNormalGuestClusterName(gcName string) bool {
 	return gcName != "" && gcName != DefaultGuestClusterName
+}
+
+// IsGuestAgentConnected returns true if the VMI has an active and connected qemu-guest-agent.
+func IsGuestAgentConnected(vmi *kubevirtv1.VirtualMachineInstance) bool {
+	if vmi == nil {
+		return false
+	}
+
+	for _, cond := range vmi.Status.Conditions {
+		if cond.Type == kubevirtv1.VirtualMachineInstanceAgentConnected {
+			return cond.Status == corev1.ConditionTrue
+		}
+	}
+
+	return false
 }

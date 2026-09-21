@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -45,6 +46,7 @@ func getCommandAndFlag(mgmtNetwork, cidrRanges string, excludeList []string) (*c
 	f.String(utils.FlagManagementNetwork, mgmtNetwork, "")
 	f.String(utils.FlagNodeIPCIDR, cidrRanges, "")
 	f.Bool(utils.FlagDisableVmiController, false, "")
+	f.Bool(utils.FlagDisableHostnameLookup, false, "")
 	f.Bool(utils.FlagShowFullHelpOnError, false, "")
 	f.StringSlice(utils.FlagCloudProviderControllers, []string{}, "")
 	f.StringSlice(utils.FlagNodeExcludeIPRanges, excludeList, "")
@@ -614,6 +616,56 @@ func Test_resolveNodeIPs(t *testing.T) {
 
 			if !reflect.DeepEqual(actual, tt.expected) {
 				t.Errorf("resolveNodeIPs() [%s] failed\nGot:  %v\nWant: %v", tt.name, actual, tt.expected)
+			}
+		})
+	}
+}
+
+func Test_getNodeVMName(t *testing.T) {
+	tests := []struct {
+		name            string
+		initialMapData  map[string]string
+		nodeName        string
+		expectedRetName string
+	}{
+		{
+			name: "Key exists in map, returns mapped VM name",
+			initialMapData: map[string]string{
+				"node-1": "vm-custom-1",
+			},
+			nodeName:        "node-1",
+			expectedRetName: "vm-custom-1",
+		},
+		{
+			name: "Key exists in map with multiple entries, returns correct VM name",
+			initialMapData: map[string]string{
+				"node-1": "vm-custom-1",
+				"node-2": "vm-custom-2",
+			},
+			nodeName:        "node-2",
+			expectedRetName: "vm-custom-2",
+		},
+		{
+			name:            "Key does not exist in map, returns original node name",
+			initialMapData:  nil,
+			nodeName:        "node-3",
+			expectedRetName: "node-3",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			im := &instanceManager{
+				nodeToVMName: &sync.Map{},
+			}
+			for k, v := range tt.initialMapData {
+				im.nodeToVMName.Store(k, v)
+			}
+
+			retName := im.getNodeVMName(tt.nodeName)
+
+			if retName != tt.expectedRetName {
+				t.Errorf("getNodeVMName() = %q, expected %q", retName, tt.expectedRetName)
 			}
 		})
 	}
