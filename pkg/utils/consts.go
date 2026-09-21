@@ -117,6 +117,7 @@ const (
 	// from "k8s.io/cloud-provider/api/well_known_annotations.go".
 	// is always respected first as a legacy override for backward compatibility.
 
-	// disable the usage of VM hostname lookup to match VM/node, avoiding error-prone fallback operations
+	// FlagDisableHostnameLookup disables the usage of VM hostname lookup to match VM/node,
+	// avoids error-prone fallback operations.
 	FlagDisableHostnameLookup = "disable-hostname-lookup"
 )

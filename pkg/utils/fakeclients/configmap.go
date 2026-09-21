@@ -24,7 +24,10 @@ type ConfigMapCache struct {
 // NewConfigMapCache returns a ConfigMapCache that returns the given ConfigMap (or
 // NotFound if cm is nil) and optionally a fixed error.
 func NewConfigMapCache(cm *v1.ConfigMap, err error) *ConfigMapCache {
-	return &ConfigMapCache{cm: cm, err: err}
+	return &ConfigMapCache{
+		cm:  cm.DeepCopy(), // Note: ConfigMap object can run DeepCopy safely on nil pointer
+		err: err,
+	}
 }
 
 func (f *ConfigMapCache) Get(namespace, name string) (*v1.ConfigMap, error) {
@@ -37,8 +40,23 @@ func (f *ConfigMapCache) Get(namespace, name string) (*v1.ConfigMap, error) {
 	return f.cm.DeepCopy(), nil
 }
 
-func (f *ConfigMapCache) List(_ string, _ labels.Selector) ([]*v1.ConfigMap, error) {
-	return nil, errImplementMe
+func (f *ConfigMapCache) List(namespace string, selector labels.Selector) ([]*v1.ConfigMap, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.cm == nil {
+		return nil, nil
+	}
+
+	if f.cm.Namespace != namespace {
+		return nil, nil
+	}
+
+	if selector != nil && !selector.Matches(labels.Set(f.cm.Labels)) {
+		return nil, nil
+	}
+
+	return []*v1.ConfigMap{f.cm.DeepCopy()}, nil
 }
 
 func (f *ConfigMapCache) AddIndexer(_ string, _ generic.Indexer[*v1.ConfigMap]) {}
@@ -73,7 +91,7 @@ func (f *ConfigMapClient) Create(cm *v1.ConfigMap) (*v1.ConfigMap, error) {
 		return nil, fmt.Errorf("the input configmap is nil")
 	}
 	f.cache.cm = cm.DeepCopy()
-	return cm, nil
+	return cm.DeepCopy(), nil
 }
 
 func (f *ConfigMapClient) Update(cm *v1.ConfigMap) (*v1.ConfigMap, error) {
@@ -87,7 +105,7 @@ func (f *ConfigMapClient) Update(cm *v1.ConfigMap) (*v1.ConfigMap, error) {
 		return nil, apierrors.NewNotFound(schema.GroupResource{Resource: "configmaps"}, cm.Name)
 	}
 	f.cache.cm = cm.DeepCopy()
-	return cm, nil
+	return cm.DeepCopy(), nil
 }
 
 func (f *ConfigMapClient) Delete(namespace, name string, options *metav1.DeleteOptions) error {
