@@ -12,7 +12,7 @@ import (
 	ctlcorev1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/core/v1"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
@@ -24,7 +24,8 @@ import (
 )
 
 const (
-	vmiControllerName = "harvester-cloudprovider-resync-topology"
+	vmiControllerName               = "harvester-cloudprovider-resync-topology"
+	vmiNetworkMappingControllerName = "harvester-cloudprovider-resync-network-mapping"
 )
 
 // Register the controller is helping to re-sync harvester node topology labels to guest cluster nodes.
@@ -51,9 +52,12 @@ func Register(
 		namespace:       namespace,
 	}
 	logrus.WithFields(logrus.Fields{
-		"controller": vmiControllerName,
-		"namespace":  namespace,
+		"controller1": vmiControllerName,
+		"controller2": vmiNetworkMappingControllerName,
+		"namespace":   namespace,
 	}).Info("start watching virtual machine instance")
+
+	vmis.OnChange(ctx, vmiNetworkMappingControllerName, handler.OnVmiChangedNetworkMapping)
 	vmis.OnChange(ctx, vmiControllerName, handler.OnVmiChanged)
 }
 
@@ -113,7 +117,7 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 
 	node, err := h.nodeCache.Get(nodeName)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !apierrors.IsNotFound(err) {
 			return vmi, err
 		}
 		// This vm does not belong to current cluster if the node is not found
@@ -124,10 +128,6 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 		if err := h.reSync(vmi); err != nil {
 			return vmi, err
 		}
-	}
-
-	if err := h.syncNADMappingConfigMap(); err != nil {
-		return vmi, fmt.Errorf("failed to sync NAD mapping ConfigMap: %w", err)
 	}
 
 	return vmi, nil
@@ -149,12 +149,15 @@ func compareTopology(a map[string]string, b map[string]string) bool {
 // syncNADMappingConfigMap computes the common NAD→interface mapping across all VMIs
 // in this guest cluster and stores it in a ConfigMap in kube-system.
 // If the mapping is empty, the value is cleared (set to "").
+//
+// Note: This is a new feature introduced in HCP 0.2.14. It requires both the HCP
+// and the VMI to have a valid, matching guest cluster name to function properly.
 func (h *Handler) syncNADMappingConfigMap() error {
 	clusterName := cfg.GetConfig().ClusterName
 
-	if clusterName == "" || clusterName == utils.DefaultGuestClusterName {
+	if !utils.IsNormalGuestClusterName(clusterName) {
 		// Return an error and exit early to prevent cross-cluster pollution
-		return fmt.Errorf("failed to sync NAD mapping ConfigMap: guest cluster name configuration is empty/default, we cannot identify the cluster")
+		return fmt.Errorf("failed to sync NAD mapping ConfigMap: guest cluster name configuration is empty/default, cannot identify the cluster")
 	}
 
 	sel := labels.Set{utils.LabelKeyGuestClusterNameOnVM: clusterName}.AsSelector()
@@ -175,7 +178,7 @@ func (h *Handler) syncNADMappingConfigMap() error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		existing, err := h.configMapClient.Get(metav1.NamespaceSystem, utils.ConfigMapNADMapping, metav1.GetOptions{})
 		if err != nil {
-			if !errors.IsNotFound(err) {
+			if !apierrors.IsNotFound(err) {
 				return err
 			}
 			_, err = h.configMapClient.Create(&corev1.ConfigMap{
@@ -200,4 +203,33 @@ func (h *Handler) syncNADMappingConfigMap() error {
 		_, err = h.configMapClient.Update(cmCopy)
 		return err
 	})
+}
+
+// OnVmiChangedNetworkMapping is decoupled from individual VMI-to-node resolution,
+// using Harvester VMI definitions as the single source of truth for global network mapping.
+//
+// Note: While individual running/completed VMI changes trigger this reconciliation,
+// syncNADMappingConfigMap evaluates the aggregate state across the cluster's VMI list
+// while properly filters out non-running or migrating VMs.
+func (h *Handler) OnVmiChangedNetworkMapping(_ string, vmi *kubevirtv1.VirtualMachineInstance) (*kubevirtv1.VirtualMachineInstance, error) {
+	// Note: Since there is no OnRemove controller, OnChange handles actual object deletions
+	// where Wrangler passes a nil object (along with instances having a DeletionTimestamp).
+	// Calling syncNADMappingConfigMap here is safe and ensures proper cleanup of related VMs.
+	if vmi == nil {
+		return vmi, h.syncNADMappingConfigMap()
+	}
+
+	// unrelated vmis, don't log anything
+	if vmi.Namespace != h.namespace {
+		return vmi, nil
+	}
+
+	if !utils.IsVmiCreatedFromHarvesterCreator(vmi) {
+		logrus.WithFields(logrus.Fields{
+			"namespace": vmi.Namespace,
+			"name":      vmi.Name,
+		}).Debug("skip processing virtual machine instance which is not created by Harvester creator")
+		return vmi, nil
+	}
+	return vmi, h.syncNADMappingConfigMap()
 }
