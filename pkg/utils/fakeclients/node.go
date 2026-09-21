@@ -78,6 +78,9 @@ func (f *NodeCache) GetClient(name string, _ metav1.GetOptions) (*v1.Node, error
 }
 
 func (f *NodeCache) Create(node *v1.Node) (*v1.Node, error) {
+	if node == nil {
+		return nil, fmt.Errorf("the input node is nil")
+	}
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	if _, ok := f.nodes[node.Name]; ok {
@@ -88,6 +91,9 @@ func (f *NodeCache) Create(node *v1.Node) (*v1.Node, error) {
 }
 
 func (f *NodeCache) Update(node *v1.Node) (*v1.Node, error) {
+	if node == nil {
+		return nil, fmt.Errorf("the input node is nil")
+	}
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	if _, ok := f.nodes[node.Name]; !ok {

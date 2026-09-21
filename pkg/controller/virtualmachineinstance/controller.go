@@ -266,11 +266,17 @@ func (h *Handler) OnVmiChangedNetworkMapping(_ string, vmi *kubevirtv1.VirtualMa
 }
 
 func (h *Handler) syncVMIAndNodeTopology(vmi *kubevirtv1.VirtualMachineInstance, hostname string) (*kubevirtv1.VirtualMachineInstance, error) {
+	// Maintain legacy behavior: skip topology sync if the VMI has no annotations.
+	if vmi.Annotations == nil {
+		return vmi, nil
+	}
+
 	node, err := h.nodeCache.Get(hostname)
 	if err != nil {
 		// This vm does not belong to current cluster, or the node object is not created yet, return error to retry
 		return vmi, fmt.Errorf("failed to get node via vm name %s/%s hostname %s: %w", vmi.Namespace, vmi.Name, hostname, err)
 	}
+
 	if !compareTopology(vmi.GetAnnotations(), node.GetLabels()) {
 		if err := h.reSync(node.Name); err != nil {
 			return vmi, err

@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/sirupsen/logrus/hooks/test"
@@ -58,11 +60,13 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		inputFlags map[string]interface{}
-		sliceFlags map[string][]string
-		expected   expectedResult
-		wantErr    bool
+		name             string
+		inputFlags       map[string]interface{}
+		sliceFlags       map[string][]string
+		expected         expectedResult
+		wantErr          bool
+		wantInputFlagErr bool
+		skipInputFlagErr bool
 	}{
 		{
 			name: "Full configuration",
@@ -242,11 +246,27 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "Explicit DisableHostnameLookup invalid value, defaults to false",
+			name: "Explicit DisableHostnameLookup invalid value is rejected and returned",
 			inputFlags: map[string]interface{}{
 				FlagDisableHostnameLookup: "invalid",
 			},
-			wantErr: false,
+			wantInputFlagErr: true,
+			wantErr:          false,
+			expected: expectedResult{
+				config: config.Config{
+					DisableHostnameLookup: false,
+					// Other fields remain zero-valued
+				},
+			},
+		},
+		{
+			name: "Explicit DisableHostnameLookup invalid value is rejected by flag parsing and skipped (value remains default)",
+			inputFlags: map[string]interface{}{
+				FlagDisableHostnameLookup: "invalid",
+			},
+			wantInputFlagErr: true,
+			skipInputFlagErr: true,
+			wantErr:          false,
 			expected: expectedResult{
 				config: config.Config{
 					DisableHostnameLookup: false,
@@ -343,7 +363,21 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd, f := getCommandAndFlag()
 			for k, v := range tt.inputFlags {
-				_ = f.Set(k, fmt.Sprintf("%v", v))
+				err := f.Set(k, fmt.Sprintf("%v", v))
+				if !tt.wantInputFlagErr {
+					continue
+				}
+				if err == nil {
+					t.Errorf("[%s] expected error but got nil", tt.name)
+					return
+				}
+				if tt.skipInputFlagErr {
+					continue
+				}
+				// the underlayer code calls `v, err := strconv.ParseBool(s)`
+				if !errors.Is(err, strconv.ErrSyntax) {
+					t.Errorf("[%s] expected strconv.ErrSyntax, got: %v", tt.name, err)
+				}
 			}
 			for k, v := range tt.sliceFlags {
 				for _, val := range v {

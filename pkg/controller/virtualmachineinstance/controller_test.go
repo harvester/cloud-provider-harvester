@@ -35,7 +35,7 @@ func newNADMappingConfigMap(mapping map[string]string) *corev1.ConfigMap {
 	}
 }
 
-func TestOnVmiChangedNetworkMapping1(t *testing.T) {
+func TestOnVmiChangedNetworkMapping(t *testing.T) {
 	namespace := "default"
 	clusterName := "test-cluster"
 
@@ -200,11 +200,11 @@ func TestTopologyChanged(t *testing.T) {
 
 	// expected result is `true`
 	if compareTopology(a, b) != true {
-		t.Fatalf("expected topologies do no change, but get changed")
+		t.Fatalf("expected topologies are identical")
 	}
 	// expected result is `false`
 	if compareTopology(a, c) != false {
-		t.Fatalf("expected topologies change change, but get unchanged")
+		t.Fatalf("expected topologies are different")
 	}
 }
 
@@ -326,6 +326,9 @@ func TestOnVmiChanged_DisableHostnameLookup(t *testing.T) {
 			Name:      vmiName,
 			Namespace: namespace,
 			UID:       types.UID("test-vmi-uid-12345"),
+			Annotations: map[string]string{
+				"test": "test",
+			},
 			Labels: map[string]string{
 				utils.LabelKeyGuestClusterNameOnVM:           clusterName,
 				utils.HarvesterLabelKeyVirtualMachineCreator: utils.HarvesterVirtualMachineCreatorNodeDriver,
@@ -441,6 +444,9 @@ func TestOnVmiChanged_HostnameLookup(t *testing.T) {
 			Name:      vmiName,
 			Namespace: namespace,
 			UID:       types.UID("test-vmi-uid-12345"),
+			Annotations: map[string]string{
+				"test": "test",
+			},
 			Labels: map[string]string{
 				utils.LabelKeyGuestClusterNameOnVM:           clusterName,
 				utils.HarvesterLabelKeyVirtualMachineCreator: utils.HarvesterVirtualMachineCreatorNodeDriver,
@@ -728,4 +734,64 @@ func TestOnVmiChanged_TopologyReSyncPatch(t *testing.T) {
 			t.Fatalf("expected NotFound error, got: %v", err)
 		}
 	})
+
+	t.Run("3. vmi has no annotation, the node reSync is skipped, it does not hit patch error", func(t *testing.T) {
+		initialNode := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: targetNodeName2,
+				Labels: map[string]string{
+					"topology.kubernetes.io/zone": "zone-a",
+				},
+			},
+		}
+
+		initialNode2 := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "not-the-target-node",
+				Labels: map[string]string{
+					"topology.kubernetes.io/zone": "zone-a",
+				},
+			},
+		}
+
+		// It is tedious to fully fake a k8s rest client, so we use a clever setup:
+		// the local node cache is initialized with targetNodeName (resolved via guest agent),
+		// but restClient is initialized with initialNode2 (with another name).
+		//
+		// Legacy code wrongly used vmi.Name to taint the node when a customized hostname
+		// was used instead of the resolved node name. This test case simulates that scenario
+		// to ensure the controller correctly targets the resolved node name rather than vmi.Name.
+		fakeK8sClient := kubefake.NewSimpleClientset(initialNode2)
+		fakeCache := fakeclients.NewNodeCache(map[string]*corev1.Node{targetNodeName2: initialNode})
+
+		fakeVMIClient := &FakeVMIInterface{
+			GuestOsInfoFunc: func(ctx context.Context, name string) (kubevirtv1.VirtualMachineInstanceGuestAgentInfo, error) {
+				return kubevirtv1.VirtualMachineInstanceGuestAgentInfo{
+					Hostname: targetNodeName2,
+				}, nil
+			},
+		}
+
+		fakeKubevirtClient := &FakeKubevirtClient{
+			VMIHandler: func(ns string) kubecli.VirtualMachineInstanceInterface {
+				return fakeVMIClient
+			},
+		}
+
+		h := &Handler{
+			namespace:      "default",
+			nodeCache:      fakeCache,
+			restClient:     fakeK8sClient,
+			kubevirtClient: fakeKubevirtClient,
+			nodeToVMName:   &sync.Map{},
+		}
+
+		vmi := baseVMI2
+		vmi.Annotations = nil // simulate the empty annotation, it skips the topology sync
+		_, err := h.OnVmiChanged("", vmi)
+		if err != nil {
+			t.Fatalf("expected no error when VMI annotations are nil (topology sync skipped), got: %v", err)
+		}
+	})
+
 }
