@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/sirupsen/logrus/hooks/test"
@@ -18,6 +20,7 @@ func getCommandAndFlag() (*cobra.Command, *flag.FlagSet) {
 	f.String(FlagManagementNetwork, "", "")
 	f.String(FlagNodeIPCIDR, "", "")
 	f.Bool(FlagDisableVmiController, false, "")
+	f.Bool(FlagDisableHostnameLookup, false, "")
 	f.Bool(FlagShowFullHelpOnError, false, "")
 	f.StringSlice(FlagCloudProviderControllers, []string{}, "")
 	f.StringSlice(FlagNodeExcludeIPRanges, []string{}, "")
@@ -50,15 +53,20 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 		if expected.lenNodeIPCIDRPPrefixes != len(actual.GetNodeIPCIDRPrefixes()) {
 			return fmt.Errorf(mismatch, "lenNodeIPCIDRPPrefixes", expected.lenNodeIPCIDRPPrefixes, len(actual.GetNodeIPCIDRPrefixes()))
 		}
+		if expected.config.DisableHostnameLookup != actual.DisableHostnameLookup {
+			return fmt.Errorf(mismatch, "DisableHostnameLookup", expected.config.DisableHostnameLookup, actual.DisableHostnameLookup)
+		}
 		return nil
 	}
 
 	tests := []struct {
-		name       string
-		inputFlags map[string]interface{}
-		sliceFlags map[string][]string
-		expected   expectedResult
-		wantErr    bool
+		name             string
+		inputFlags       map[string]interface{}
+		sliceFlags       map[string][]string
+		expected         expectedResult
+		wantErr          bool
+		wantInputFlagErr bool
+		skipInputFlagErr bool
 	}{
 		{
 			name: "Full configuration",
@@ -212,6 +220,61 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "Explicit DisableHostnameLookup true",
+			inputFlags: map[string]interface{}{
+				FlagDisableHostnameLookup: "true",
+			},
+			wantErr: false,
+			expected: expectedResult{
+				config: config.Config{
+					DisableHostnameLookup: true,
+					// Other fields remain zero-valued
+				},
+			},
+		},
+		{
+			name: "Explicit DisableHostnameLookup false",
+			inputFlags: map[string]interface{}{
+				FlagDisableHostnameLookup: "false",
+			},
+			wantErr: false,
+			expected: expectedResult{
+				config: config.Config{
+					DisableHostnameLookup: false,
+					// Other fields remain zero-valued
+				},
+			},
+		},
+		{
+			name: "Explicit DisableHostnameLookup invalid value is rejected and returned",
+			inputFlags: map[string]interface{}{
+				FlagDisableHostnameLookup: "invalid",
+			},
+			wantInputFlagErr: true,
+			wantErr:          false,
+			expected: expectedResult{
+				config: config.Config{
+					DisableHostnameLookup: false,
+					// Other fields remain zero-valued
+				},
+			},
+		},
+		{
+			name: "Explicit DisableHostnameLookup invalid value is rejected by flag parsing and skipped (value remains default)",
+			inputFlags: map[string]interface{}{
+				FlagDisableHostnameLookup: "invalid",
+			},
+			wantInputFlagErr: true,
+			skipInputFlagErr: true,
+			wantErr:          false,
+			expected: expectedResult{
+				config: config.Config{
+					DisableHostnameLookup: false,
+					// Other fields remain zero-valued
+				},
+			},
+		},
+		{
 			name:       "No input flag",
 			inputFlags: map[string]interface{}{},
 			wantErr:    false,
@@ -300,7 +363,21 @@ func Test_SyncAndValidateHarvesterConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd, f := getCommandAndFlag()
 			for k, v := range tt.inputFlags {
-				_ = f.Set(k, fmt.Sprintf("%v", v))
+				err := f.Set(k, fmt.Sprintf("%v", v))
+				if !tt.wantInputFlagErr {
+					continue
+				}
+				if err == nil {
+					t.Errorf("[%s] expected error but got nil", tt.name)
+					return
+				}
+				if tt.skipInputFlagErr {
+					continue
+				}
+				// the underlayer code calls `v, err := strconv.ParseBool(s)`
+				if !errors.Is(err, strconv.ErrSyntax) {
+					t.Errorf("[%s] expected strconv.ErrSyntax, got: %v", tt.name, err)
+				}
 			}
 			for k, v := range tt.sliceFlags {
 				for _, val := range v {
