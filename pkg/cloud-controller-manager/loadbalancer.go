@@ -49,7 +49,7 @@ func (l *LoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName s
 	// includes the privilege to list and watch the load balancers in all namespaces, whereas the client only needs to
 	// be allowed to get the load balancer in the specified namespace. Following the principle of least privilege, we
 	// choose the client instead of the cache to get the load balancer.
-	lb, err := l.lbClient.Get(l.namespace, name, metav1.GetOptions{})
+	_, err = l.lbClient.Get(l.namespace, name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, false, nil
@@ -57,10 +57,8 @@ func (l *LoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName s
 		return nil, false, err
 	}
 
-	if lb.Status.Address == "" {
-		return nil, false, nil
-	}
-
+	// Returns true regardless of whether lb.Status.Address is empty, allowing
+	// the framework to delete the remote LB object during cleanup.
 	return &service.Status.LoadBalancer, true, nil
 }
 
@@ -245,6 +243,8 @@ func (l *LoadBalancerManager) EnsureLoadBalancerDeleted(ctx context.Context, clu
 	if primarySvc != nil {
 		return nil
 	}
+
+	logrus.Infof("Delete service %s/%s on cluster %s", service.Namespace, service.Name, clusterName)
 
 	return l.deleteLoadBalancer(clusterName, service)
 }
