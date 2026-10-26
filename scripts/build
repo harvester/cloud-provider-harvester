@@ -51,6 +51,8 @@ ALL_LDFLAGS="${LDFLAGS_VERSION[*]} ${LINKFLAGS:-}"
 
 echo "To be injected version info:"
 echo "${LDFLAGS_VERSION[*]}"
+echo "Current go builder info:"
+go version
 
 for arch in "amd64" "arm64"; do
     GOARCH="$arch" CGO_ENABLED=0 go build -ldflags "${ALL_LDFLAGS}" -o bin/harvester-cloud-provider-"$arch"
