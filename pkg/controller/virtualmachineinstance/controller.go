@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	cfg "github.com/harvester/harvester-cloud-provider/pkg/config"
@@ -149,7 +150,10 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 				"namespace": vmi.Namespace,
 				"hostname":  guestAgentInfo.Hostname,
 			}).Info("get agent info success, using hostname as node name")
-			nodeName = guestAgentInfo.Hostname
+			// Kubernetes node names are lowercase, while some guests report the
+			// hostname in uppercase: Windows returns its NetBIOS computer name,
+			// e.g. WIN-NODE-1 for node win-node-1. Normalize so the node is found.
+			nodeName = strings.ToLower(guestAgentInfo.Hostname)
 			h.nodeToVMName.Store(nodeName, vmi.Name)
 		} else {
 			logrus.WithFields(logrus.Fields{
