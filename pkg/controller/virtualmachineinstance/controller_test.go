@@ -511,6 +511,13 @@ func TestOnVmiChanged_HostnameLookup(t *testing.T) {
 			expectError:           false,
 			targetNodeNameToCheck: targetNodeName,
 		},
+		{
+			name:                  "4. agent ready, returns an uppercase (Windows NetBIOS) hostname, node is stored lowercase",
+			guestOsInfoRet:        kubevirtv1.VirtualMachineInstanceGuestAgentInfo{Hostname: strings.ToUpper(targetNodeName)},
+			initialNodes:          initialNodes,
+			expectError:           false,
+			targetNodeNameToCheck: targetNodeName,
+		},
 	}
 
 	for _, tc := range tests {
