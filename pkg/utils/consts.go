@@ -110,6 +110,11 @@ const (
 	// Value is the guest cluster name
 	LabelKeyGuestClusterNameOnVM = "guestcluster.harvesterhci.io/name"
 
+	// LabelKeyGuestNodeNameOnVM is the label the node driver applies to a VM and its VMI
+	// with the name of the guest cluster node that runs on it. When present, it maps
+	// the node to the VM without relying on the VM name or the guest agent hostname.
+	LabelKeyGuestNodeNameOnVM = "guestcluster.harvesterhci.io/node-name"
+
 	// node-ip related
 
 	// Note:

@@ -12,11 +12,15 @@ import (
 	flag "github.com/spf13/pflag"
 
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/cloud-provider/api"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 
 	"github.com/harvester/harvester-cloud-provider/pkg/config"
+	ctlkubevirtv1 "github.com/harvester/harvester-cloud-provider/pkg/generated/controllers/kubevirt.io/v1"
 	utils "github.com/harvester/harvester-cloud-provider/pkg/utils"
 )
 
@@ -683,6 +687,126 @@ func Test_getNodeVMName(t *testing.T) {
 
 			if retName != tt.expectedRetName {
 				t.Errorf("getNodeVMName() = %q, expected %q", retName, tt.expectedRetName)
+			}
+		})
+	}
+}
+
+// fakeVMClient implements the List and Get calls getVM uses, filtering VMs by label selector.
+type fakeVMClient struct {
+	ctlkubevirtv1.VirtualMachineClient
+	vms []kubevirtv1.VirtualMachine
+}
+
+func (f *fakeVMClient) List(namespace string, opts metav1.ListOptions) (*kubevirtv1.VirtualMachineList, error) {
+	sel, err := labels.Parse(opts.LabelSelector)
+	if err != nil {
+		return nil, err
+	}
+	list := &kubevirtv1.VirtualMachineList{}
+	for _, vm := range f.vms {
+		if vm.Namespace == namespace && sel.Matches(labels.Set(vm.Labels)) {
+			list.Items = append(list.Items, vm)
+		}
+	}
+	return list, nil
+}
+
+func (f *fakeVMClient) Get(namespace, name string, _ metav1.GetOptions) (*kubevirtv1.VirtualMachine, error) {
+	for i := range f.vms {
+		if f.vms[i].Namespace == namespace && f.vms[i].Name == name {
+			return &f.vms[i], nil
+		}
+	}
+	return nil, apierrors.NewNotFound(schema.GroupResource{Group: "kubevirt.io", Resource: "virtualmachines"}, name)
+}
+
+func Test_getVM(t *testing.T) {
+	vm := func(name, cluster, node string) kubevirtv1.VirtualMachine {
+		l := map[string]string{}
+		if cluster != "" {
+			l[utils.LabelKeyGuestClusterNameOnVM] = cluster
+		}
+		if node != "" {
+			l[utils.LabelKeyGuestNodeNameOnVM] = node
+		}
+		return kubevirtv1.VirtualMachine{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace, Labels: l}}
+	}
+
+	oldCluster := config.GetConfig().ClusterName
+	config.GetConfig().ClusterName = "wintest2"
+	defer func() { config.GetConfig().ClusterName = oldCluster }()
+
+	tests := []struct {
+		name           string
+		vms            []kubevirtv1.VirtualMachine
+		nodeName       string
+		disableLookup  bool
+		expectedVM     string
+		expectError    bool
+		expectNotFound bool
+	}{
+		{
+			name:       "label matches, VM name differs from the node name",
+			vms:        []kubevirtv1.VirtualMachine{vm("wintest2-win2-qnrbd-df2sf", "wintest2", "wintest2-90cdf2")},
+			nodeName:   "wintest2-90cdf2",
+			expectedVM: "wintest2-win2-qnrbd-df2sf",
+		},
+		{
+			name:          "label matches even when the hostname lookup is disabled",
+			vms:           []kubevirtv1.VirtualMachine{vm("wintest2-win2-qnrbd-df2sf", "wintest2", "wintest2-90cdf2")},
+			nodeName:      "wintest2-90cdf2",
+			disableLookup: true,
+			expectedVM:    "wintest2-win2-qnrbd-df2sf",
+		},
+		{
+			name:           "label of another guest cluster is ignored",
+			vms:            []kubevirtv1.VirtualMachine{vm("other-vm", "other", "wintest2-90cdf2")},
+			nodeName:       "wintest2-90cdf2",
+			expectNotFound: true,
+		},
+		{
+			name:       "no label, falls back to the VM named after the node",
+			vms:        []kubevirtv1.VirtualMachine{vm("node-a", "wintest2", "")},
+			nodeName:   "node-a",
+			expectedVM: "node-a",
+		},
+		{
+			name:        "two VMs with the same label is an error",
+			vms:         []kubevirtv1.VirtualMachine{vm("vm-1", "wintest2", "dup"), vm("vm-2", "wintest2", "dup")},
+			nodeName:    "dup",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldLookup := config.GetConfig().DisableHostnameLookup
+			config.GetConfig().DisableHostnameLookup = tt.disableLookup
+			defer func() { config.GetConfig().DisableHostnameLookup = oldLookup }()
+
+			im := &instanceManager{
+				vmClient:     &fakeVMClient{vms: tt.vms},
+				nodeToVMName: &sync.Map{},
+				namespace:    testNamespace,
+			}
+			got, err := im.getVM(&v1.Node{ObjectMeta: metav1.ObjectMeta{Name: tt.nodeName}})
+			switch {
+			case tt.expectError:
+				if err == nil || apierrors.IsNotFound(err) {
+					t.Fatalf("expected an ambiguity error, got %v", err)
+				}
+			case tt.expectNotFound:
+				if !apierrors.IsNotFound(err) {
+					t.Fatalf("expected not found, got vm %v err %v", got, err)
+				}
+			default:
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if got.Name != tt.expectedVM {
+					t.Fatalf("getVM() = %q, expected %q", got.Name, tt.expectedVM)
+				}
 			}
 		})
 	}

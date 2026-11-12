@@ -512,11 +512,23 @@ func TestOnVmiChanged_HostnameLookup(t *testing.T) {
 			targetNodeNameToCheck: targetNodeName,
 		},
 		{
-			name:                  "4. agent ready, returns an uppercase (Windows NetBIOS) hostname, node is stored lowercase",
-			guestOsInfoRet:        kubevirtv1.VirtualMachineInstanceGuestAgentInfo{Hostname: strings.ToUpper(targetNodeName)},
-			initialNodes:          initialNodes,
-			expectError:           false,
-			targetNodeNameToCheck: targetNodeName,
+			name:           "4. VMI has the guest node name label, the agent hostname is not used",
+			guestOsInfoRet: kubevirtv1.VirtualMachineInstanceGuestAgentInfo{Hostname: "WINTEST2-F3395D"},
+			guestOsInfoErr: fmt.Errorf("GuestOsInfo must not be called"),
+			vmiModifier: func(v *kubevirtv1.VirtualMachineInstance) {
+				v.Labels[utils.LabelKeyGuestNodeNameOnVM] = targetNodeName
+			},
+			initialNodes: initialNodes,
+			expectError:  false,
+		},
+		{
+			name: "5. VMI has the guest node name label, but the node does not exist",
+			vmiModifier: func(v *kubevirtv1.VirtualMachineInstance) {
+				v.Labels[utils.LabelKeyGuestNodeNameOnVM] = "missing-node"
+			},
+			initialNodes:  initialNodes,
+			expectError:   true,
+			errorContains: "missing-node",
 		},
 	}
 

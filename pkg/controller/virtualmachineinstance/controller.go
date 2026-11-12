@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 
 	cfg "github.com/harvester/harvester-cloud-provider/pkg/config"
@@ -125,6 +124,12 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 		}).Debug("Insufficient guest cluster information; proceeding")
 	}
 
+	// The node driver records the guest node name on the VMI. It is authoritative:
+	// no guest agent lookup is needed.
+	if nodeName := utils.GetLabelGuestNodeName(vmi); nodeName != "" {
+		return h.syncVMIAndNodeTopology(vmi, nodeName)
+	}
+
 	// when hostname lookup is disabled, controller works solely via vmi.Name == node.Name
 	// avoiding tricky, error-prone guest OS lookup scenarios.
 	if cfg.GetConfig().DisableHostnameLookup {
@@ -150,10 +155,7 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 				"namespace": vmi.Namespace,
 				"hostname":  guestAgentInfo.Hostname,
 			}).Info("get agent info success, using hostname as node name")
-			// Kubernetes node names are lowercase, while some guests report the
-			// hostname in uppercase: Windows returns its NetBIOS computer name,
-			// e.g. WIN-NODE-1 for node win-node-1. Normalize so the node is found.
-			nodeName = strings.ToLower(guestAgentInfo.Hostname)
+			nodeName = guestAgentInfo.Hostname
 			h.nodeToVMName.Store(nodeName, vmi.Name)
 		} else {
 			logrus.WithFields(logrus.Fields{
