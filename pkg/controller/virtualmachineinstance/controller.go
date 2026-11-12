@@ -124,6 +124,12 @@ func (h *Handler) OnVmiChanged(_ string, vmi *kubevirtv1.VirtualMachineInstance)
 		}).Debug("Insufficient guest cluster information; proceeding")
 	}
 
+	// The node driver records the guest node name on the VMI. It is authoritative:
+	// no guest agent lookup is needed.
+	if nodeName := utils.GetLabelGuestNodeName(vmi); nodeName != "" {
+		return h.syncVMIAndNodeTopology(vmi, nodeName)
+	}
+
 	// when hostname lookup is disabled, controller works solely via vmi.Name == node.Name
 	// avoiding tricky, error-prone guest OS lookup scenarios.
 	if cfg.GetConfig().DisableHostnameLookup {
