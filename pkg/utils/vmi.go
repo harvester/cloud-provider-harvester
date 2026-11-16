@@ -93,6 +93,14 @@ func GetLabelGuestClusterName(vmi *kubevirtv1.VirtualMachineInstance) string {
 	return vmi.Labels[LabelKeyGuestClusterNameOnVM]
 }
 
+// GetLabelGuestNodeName returns the guest node name the node driver recorded on the VMI, if any.
+func GetLabelGuestNodeName(vmi *kubevirtv1.VirtualMachineInstance) string {
+	if vmi == nil {
+		return ""
+	}
+	return vmi.Labels[LabelKeyGuestNodeNameOnVM]
+}
+
 func IsVmiCreatedFromHarvesterCreator(vmi *kubevirtv1.VirtualMachineInstance) bool {
 	if vmi == nil {
 		return false

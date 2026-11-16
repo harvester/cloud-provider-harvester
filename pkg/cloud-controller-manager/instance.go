@@ -11,6 +11,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	cloudprovider "k8s.io/cloud-provider"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 
@@ -88,7 +89,33 @@ func (i *instanceManager) InstanceMetadata(ctx context.Context, node *v1.Node) (
 }
 
 func (i *instanceManager) getVM(node *v1.Node) (*kubevirtv1.VirtualMachine, error) {
+	vm, err := i.getVMByNodeNameLabel(node.Name)
+	if err != nil || vm != nil {
+		return vm, err
+	}
 	return i.vmClient.Get(i.namespace, i.getNodeVMName(node.Name), metav1.GetOptions{})
+}
+
+// getVMByNodeNameLabel returns the VM that the node driver labeled with the node name.
+// It returns nil when no VM carries the label, so the caller can fall back to the
+// name-based lookup, and an error when more than one VM matches.
+func (i *instanceManager) getVMByNodeNameLabel(nodeName string) (*kubevirtv1.VirtualMachine, error) {
+	set := labels.Set{utils.LabelKeyGuestNodeNameOnVM: nodeName}
+	if clusterName := config.GetConfig().ClusterName; utils.IsNormalGuestClusterName(clusterName) {
+		set[utils.LabelKeyGuestClusterNameOnVM] = clusterName
+	}
+	vms, err := i.vmClient.List(i.namespace, metav1.ListOptions{LabelSelector: set.AsSelector().String()})
+	if err != nil {
+		return nil, err
+	}
+	switch len(vms.Items) {
+	case 0:
+		return nil, nil
+	case 1:
+		return &vms.Items[0], nil
+	default:
+		return nil, fmt.Errorf("%d virtual machines in namespace %s have label %s=%s", len(vms.Items), i.namespace, utils.LabelKeyGuestNodeNameOnVM, nodeName)
+	}
 }
 
 func (i *instanceManager) getNodeVMName(nm string) string {
